@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - Authority Report Review</title>
+    <style>
+        :root { --bg: #f4f6f9; --primary: #2c3e50; --accent: #00C851; --border: #ddd; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        
+        .header { background: #fff; padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; border-left: 5px solid var(--accent); }
+        .header h1 { margin: 0; font-size: 1.5em; color: var(--primary); }
+        
+        .main { display: flex; gap: 20px; flex: 1; min-height: 0; }
+        
+        .list-panel { flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden; }
+        .list-panel h2 { margin: 0; padding: 15px; background: #fafafa; border-bottom: 1px solid var(--border); font-size: 1.1em; }
+        .report-list { list-style: none; padding: 0; margin: 0; overflow-y: auto; flex: 1; }
+        .report-item { padding: 15px; border-bottom: 1px solid var(--border); cursor: pointer; display: flex; flex-direction: column; gap: 5px; }
+        .report-item:hover { background: #f0f4f8; }
+        .report-item.active { background: #e3f2fd; border-left: 4px solid #2980b9; }
+        .r-header { display: flex; justify-content: space-between; font-weight: bold; }
+        .r-status { font-size: 0.85em; padding: 3px 8px; border-radius: 12px; background: #eee; text-transform: uppercase; }
+        
+        .detail-panel { flex: 2; background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; display: flex; flex-direction: column; overflow-y: auto; }
+        .empty-state { text-align: center; color: #7f8c8d; margin-top: 100px; font-style: italic; }
+        
+        .report-content { display: none; }
+        .report-content h2 { margin-top: 0; color: var(--primary); border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+        
+        .image-container { text-align: center; background: #000; border-radius: 8px; overflow: hidden; height: 300px; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; }
+        .image-container img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        
+        .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .data-box { background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px solid var(--border); }
+        .data-box label { display: block; font-size: 0.8em; color: #7f8c8d; text-transform: uppercase; font-weight: bold; margin-bottom: 5px; }
+        .data-box .val { font-size: 1.1em; font-weight: bold; color: #2c3e50; }
+        
+        .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border); }
+        .btn { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: #fff; transition: 0.2s; }
+        .btn-verify { background: #27ae60; }
+        .btn-reject { background: #c0392b; }
+        .btn-review { background: #f39c12; }
+        .btn-resolve { background: #2980b9; }
+        .btn:hover { opacity: 0.9; transform: translateY(-1px); }
+        
+        /* Status Colors */
+        .status-pending { background: #f1c40f !important; color: #000 !important; }
+        .status-verified { background: #2ecc71 !important; color: #fff !important; }
+        .status-rejected { background: #e74c3c !important; color: #fff !important; }
+        .status-under_review { background: #e67e22 !important; color: #fff !important; }
+        .status-resolved { background: #3498db !important; color: #fff !important; }
+        
+        @media (max-width: 900px) {
+            .main { flex-direction: column; }
+            .list-panel { flex: none; height: 300px; }
+            .data-grid { grid-template-columns: 1fr; }
+            .data-box[style] { grid-column: auto !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Authority Review Portal</h1>
+        <div>WildAI Community Reports</div>
+    </div>
+
+    <div class="main">
+        <div class="list-panel">
+            <h2>Inbox</h2>
+            <ul class="report-list" id="report-list">
+                <!-- JS Inject -->
+            </ul>
+        </div>
+        
+        <div class="detail-panel">
+            <div class="empty-state" id="empty-state">Select a report from the inbox to review.</div>
+            
+            <div class="report-content" id="report-content">
+                <h2 id="d_id">Report #--</h2>
+                
+                <div class="image-container">
+                    <img id="d_img" src="" alt="Report Evidence">
+                </div>
+                
+                <div class="data-grid">
+                    <div class="data-box">
+                        <label>Location</label>
+                        <div class="val" id="d_loc"></div>
+                    </div>
+                    <div class="data-box">
+                        <label>Timestamp</label>
+                        <div class="val" id="d_time"></div>
+                    </div>
+                    <div class="data-box">
+                        <label>AI Species Detection</label>
+                        <div class="val" id="d_species" style="text-transform: capitalize;"></div>
+                    </div>
+                    <div class="data-box">
+                        <label>AI Confidence</label>
+                        <div class="val" id="d_conf"></div>
+                    </div>
+                    <div class="data-box" style="grid-column: span 2;">
+                        <label>Authenticity Screening</label>
+                        <div class="val" id="d_auth"></div>
+                    </div>
+                    <div class="data-box" style="grid-column: span 2;">
+                        <label>User Description</label>
+                        <div class="val" id="d_desc" style="font-weight: normal;"></div>
+                    </div>
+                </div>
+                
+                <div class="actions">
+                    <button class="btn btn-verify" onclick="updateStatus('VERIFIED')">Verify</button>
+                    <button class="btn btn-reject" onclick="updateStatus('REJECTED')">Reject</button>
+                    <button class="btn btn-review" onclick="updateStatus('UNDER REVIEW')">Request Review</button>
+                    <button class="btn btn-resolve" onclick="updateStatus('RESOLVED')">Mark Resolved</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let reports = [];
+        let selectedId = null;
+
+        async function loadReports() {
+            try {
+                const res = await fetch('/api/v2/reports/admin');
+                reports = await res.json();
+                renderList();
+                if (selectedId) selectReport(selectedId);
+            } catch(e) {
+                console.error("Failed to load", e);
+            }
+        }
+
+        function renderList() {
+            const ul = document.getElementById('report-list');
+            ul.innerHTML = '';
+            
+            reports.forEach(r => {
+                const li = document.createElement('li');
+                li.className = `report-item ${r.id === selectedId ? 'active' : ''}`;
+                li.onclick = () => selectReport(r.id);
+                
+                const stClass = `status-${(r.status || 'PENDING').toLowerCase().replace(' ', '_')}`;
+                
+                li.innerHTML = `
+                    <div class="r-header">
+                        <span>Report #${r.id}</span>
+                        <span class="r-status ${stClass}">${r.status}</span>
+                    </div>
+                    <div style="font-size: 0.9em; color: #555; text-transform: capitalize;">${r.ai_species || 'Unknown'}</div>
+                    <div style="font-size: 0.8em; color: #888;">${new Date(r.timestamp).toLocaleString()}</div>
+                `;
+                ul.appendChild(li);
+            });
+        }
+
+        function selectReport(id) {
+            selectedId = id;
+            renderList();
+            
+            const r = reports.find(x => x.id === id);
+            if (!r) return;
+            
+            document.getElementById('empty-state').style.display = 'none';
+            document.getElementById('report-content').style.display = 'block';
+            
+            document.getElementById('d_id').innerText = `Report #${r.id}`;
+            document.getElementById('d_img').src = `/${r.image_path}`;
+            document.getElementById('d_loc').innerText = r.location_text || (r.location_lat ? `${r.location_lat}, ${r.location_lon}` : 'N/A');
+            document.getElementById('d_time').innerText = new Date(r.timestamp).toLocaleString();
+            document.getElementById('d_species').innerText = r.ai_species || 'N/A';
+            document.getElementById('d_conf').innerText = r.ai_confidence ? `${Math.round(r.ai_confidence * 100)}%` : 'N/A';
+            document.getElementById('d_auth').innerText = `${(r.authenticity_result || 'Unknown').toUpperCase()} (Conf: ${r.authenticity_confidence || 'N/A'})`;
+            document.getElementById('d_desc').innerText = r.description || 'No description provided by user.';
+        }
+
+        async function updateStatus(newStatus) {
+            if (!selectedId) return;
+            if (!confirm(`Are you sure you want to mark Report #${selectedId} as ${newStatus}?`)) return;
+            
+            try {
+                const res = await fetch(`/api/v2/reports/admin/${selectedId}/status`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    loadReports();
+                } else {
+                    alert('Error updating status');
+                }
+            } catch(e) {
+                alert('Connection error');
+            }
+        }
+
+        loadReports();
+    </script>
+</body>
+</html>

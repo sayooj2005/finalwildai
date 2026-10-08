@@ -1,0 +1,30 @@
+{
+  "temporal_persistence_frames": 1,
+  "preprocessing": {
+    "enabled": true,
+    "mode": "clahe",
+    "clahe_clip_limit": 2.5,
+    "clahe_tile_grid_size": [8, 8]
+  },
+  "adaptive_roi": {
+    "enabled": true,
+    "trigger_conf_min": 0.15,
+    "trigger_conf_max": 0.45,
+    "padding": 60
+  },
+  "categories": {
+    "HUMAN": ["person", "poacher"],
+    "WILDLIFE": ["tiger", "elephant", "leopard", "deer", "wild boar", "monkey", "bear", "zebra", "giraffe", "cow", "horse", "sheep", "dog", "cat"]
+  },
+  "classes": {
+    "tiger": {"threshold": 0.40, "priority": "critical", "risk_weight": 100},
+    "elephant": {"threshold": 0.50, "priority": "high", "risk_weight": 85},
+    "leopard": {"threshold": 0.40, "priority": "critical", "risk_weight": 95},
+    "bear": {"threshold": 0.45, "priority": "high", "risk_weight": 80},
+    "wild boar": {"threshold": 0.45, "priority": "medium", "risk_weight": 60},
+    "deer": {"threshold": 0.45, "priority": "low", "risk_weight": 20},
+    "monkey": {"threshold": 0.40, "priority": "low", "risk_weight": 30},
+    "person": {"threshold": 0.35, "priority": "critical", "risk_weight": 100},
+    "default": {"threshold": 0.50, "priority": "low", "risk_weight": 10}
+  }
+}

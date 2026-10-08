@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - System Status</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121212; color: #fff; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #1e1e1e; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h1 { border-bottom: 2px solid #33b5e5; padding-bottom: 10px; margin-top: 0; color: #fff; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 20px; }
+        
+        .status-card { background: #2c2c2c; padding: 20px; border-radius: 6px; text-align: center; border: 1px solid #444; }
+        .status-card h3 { margin: 0 0 15px 0; font-size: 1.1em; color: #ccc; }
+        
+        .badge { display: inline-block; padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 0.9em; letter-spacing: 1px; }
+        .badge.ONLINE { background-color: rgba(0, 200, 81, 0.2); color: #00C851; border: 1px solid #00C851; }
+        .badge.DEGRADED { background-color: rgba(255, 152, 0, 0.2); color: #ff9800; border: 1px solid #ff9800; }
+        .badge.OFFLINE { background-color: rgba(255, 68, 68, 0.2); color: #ff4444; border: 1px solid #ff4444; }
+        
+        .refresh-text { text-align: center; color: #888; font-size: 0.85em; margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>System Status Dashboard</h1>
+    <p style="color: #aaa;">Real-time health monitoring of core WildAI production components.</p>
+    
+    <div class="grid" id="status-grid">
+        <div class="status-card"><h3>CAMERA</h3><div id="status_CAMERA" class="badge">LOADING...</div></div>
+        <div class="status-card"><h3>AI MODEL</h3><div id="status_AI_MODEL" class="badge">LOADING...</div></div>
+        <div class="status-card"><h3>BACKEND</h3><div id="status_BACKEND" class="badge">LOADING...</div></div>
+        <div class="status-card"><h3>DATABASE</h3><div id="status_DATABASE" class="badge">LOADING...</div></div>
+        <div class="status-card"><h3>ALERT SERVICE</h3><div id="status_ALERT_SERVICE" class="badge">LOADING...</div></div>
+        <div class="status-card"><h3>MAP SERVICE</h3><div id="status_MAP_SERVICE" class="badge">LOADING...</div></div>
+    </div>
+    
+    <div class="refresh-text" id="last-updated">Updating...</div>
+</div>
+
+<script>
+    async function fetchStatus() {
+        try {
+            const res = await fetch('/api/system/status');
+            const data = await res.json();
+            
+            Object.keys(data).forEach(key => {
+                const el = document.getElementById(`status_${key}`);
+                if (el) {
+                    el.innerText = data[key];
+                    el.className = `badge ${data[key]}`;
+                }
+            });
+            
+            document.getElementById('last-updated').innerText = `Last Updated: ${new Date().toLocaleTimeString()}`;
+        } catch (e) {
+            // If backend is entirely down, mark everything OFFLINE
+            const components = ["CAMERA", "AI_MODEL", "BACKEND", "DATABASE", "ALERT_SERVICE", "MAP_SERVICE"];
+            components.forEach(key => {
+                const el = document.getElementById(`status_${key}`);
+                if (el) { el.innerText = "OFFLINE"; el.className = "badge OFFLINE"; }
+            });
+            document.getElementById('last-updated').innerText = `Connection to backend lost.`;
+        }
+    }
+    
+    fetchStatus();
+    setInterval(fetchStatus, 5000);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WILDAI Operations Hub</title>
+    <style>
+        :root { --bg: #0f172a; --panel: #1e293b; --text: #f8fafc; --primary: #3b82f6; --accent: #10b981; --border: #334155; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
+        
+        .navbar { background: var(--panel); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .navbar h1 { margin: 0; font-size: 1.5rem; letter-spacing: 2px; color: var(--text); display: flex; align-items: center; gap: 10px; }
+        .navbar h1 span { color: var(--accent); }
+        
+        .container { max-width: 1200px; margin: 40px auto; padding: 0 20px; flex: 1; }
+        .section-title { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; margin-top: 40px; }
+        .section-title:first-child { margin-top: 0; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 25px; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: var(--text); display: flex; flex-direction: column; gap: 10px; outline: none; }
+        .card:hover, .card:focus { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); border-color: var(--primary); }
+        
+        .card h2 { margin: 0; font-size: 1.3rem; color: var(--primary); }
+        .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; flex: 1; }
+        
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background: #334155; color: #f8fafc; align-self: flex-start; text-transform: uppercase; }
+        .badge.critical { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
+        .badge.active { background: rgba(16, 185, 129, 0.2); color: var(--accent); border: 1px solid var(--accent); }
+        
+        .footer { text-align: center; padding: 20px; color: #64748b; font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: auto; }
+        
+        @media (max-width: 600px) {
+            .navbar { flex-direction: column; text-align: center; gap: 10px; padding: 15px; }
+            .container { margin: 20px auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <h1>WILD<span>AI</span> Operations Hub</h1>
+    </div>
+
+    <div class="container">
+        
+        <div class="section-title">Command & Control</div>
+        <div class="grid">
+            <a href="/live" class="card" aria-label="Live Monitoring">
+                <span class="badge active">Live System</span>
+                <h2>Live Monitoring</h2>
+                <p>Real-time dual-stream video feeds with AI bounding boxes, active tracking telemetry, and live threat metrics.</p>
+            </a>
+            <a href="/map" class="card" aria-label="Geospatial Intelligence Map">
+                <span class="badge active">Tactical Map</span>
+                <h2>Geospatial Intelligence</h2>
+                <p>High-density cluster mapping of incidents, wildlife detections, active risk zones, and dynamic evacuation routing.</p>
+            </a>
+            <a href="/incident-management" class="card" aria-label="Incident Management">
+                <span class="badge critical">Dispatch & Triage</span>
+                <h2>Incident Management</h2>
+                <p>Manage the full lifecycle of wildlife and poacher incursions. Assign officers and update response status.</p>
+            </a>
+        </div>
+
+        <div class="section-title">Community & Authority</div>
+        <div class="grid">
+            <a href="/report.html" class="card" aria-label="Submit Public Report">
+                <h2>Public Reporting Portal</h2>
+                <p>Mobile-optimized interface for local villagers to upload photos and GPS data of wildlife sightings.</p>
+            </a>
+            <a href="/report-review" class="card" aria-label="Authority Report Review">
+                <h2>Authority Review</h2>
+                <p>Verify or reject community submissions. Deepfake authenticity scores and YOLO validation attached to all reports.</p>
+            </a>
+        </div>
+
+        <div class="section-title">Analytics & Health</div>
+        <div class="grid">
+            <a href="/analytics" class="card" aria-label="Data Analytics">
+                <h2>Data Analytics</h2>
+                <p>Macro-level KPI dashboards. Analyze species distributions, heatmaps, and historical alert frequencies.</p>
+            </a>
+            <a href="/diagnostics" class="card" aria-label="System Diagnostics">
+                <h2>System Diagnostics</h2>
+                <p>Hardware-level telemetry. Monitor GPU/CPU inference FPS, latency, SQLite health, and Twilio SMS connection status.</p>
+            </a>
+        </div>
+        
+        <div class="section-title">Training & Demonstration</div>
+        <div class="grid">
+            <a href="/demo" class="card" aria-label="Demo Control Panel" style="border-left: 4px solid #f59e0b;">
+                <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b;">Simulation</span>
+                <h2>Demo Control Panel</h2>
+                <p>Trigger isolated demonstration scenarios (Tiger, Elephant, Route Blockages) explicitly watermarked to preserve production data.</p>
+            </a>
+        </div>
+        
+    </div>
+    
+    <div class="footer">
+        WILDAI Operations System &copy; 2026. Authorized personnel only.
+        <div style="margin-top: 15px; opacity: 0.1; transition: opacity 0.3s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.1">
+            <input type="text" id="ipcam" placeholder="IP Webcam URL (e.g. http://192.168.1.5:8080/video)" style="background: transparent; border: 1px solid #334155; color: #fff; padding: 4px; font-size: 10px; width: 250px; outline: none;">
+            <button onclick="setCam()" style="background: transparent; border: 1px solid #334155; color: #fff; padding: 4px 8px; font-size: 10px; cursor: pointer;">Set</button>
+        </div>
+    </div>
+    <script>
+        async function setCam() {
+            const url = document.getElementById('ipcam').value;
+            if (!url) return;
+            try {
+                const res = await fetch('/api/settings/camera', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url})
+                });
+                const data = await res.json();
+                alert(data.message);
+            } catch(e) {
+                alert("Error setting camera.");
+            }
+        }
+    </script>
+</body>
+</html>

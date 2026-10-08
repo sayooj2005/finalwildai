@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - Community Wildlife Reporting</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #2c3e50; text-align: center; margin-top: 0; border-bottom: 2px solid #00C851; padding-bottom: 10px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
+        input[type="text"], textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        input[type="file"] { display: none; }
+        .file-btn { display: inline-block; background: #007bff; color: #fff; padding: 10px 15px; border-radius: 5px; cursor: pointer; text-align: center; font-weight: bold; width: 100%; box-sizing: border-box; }
+        .file-btn:hover { background: #0056b3; }
+        #preview { width: 100%; max-height: 300px; object-fit: contain; margin-top: 10px; display: none; border: 1px solid #ddd; border-radius: 5px; }
+        .submit-btn { background: #00C851; color: #fff; padding: 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; margin-top: 10px; }
+        .submit-btn:hover { background: #007e33; }
+        .gps-btn { background: #6c757d; color: #fff; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 0.9em; margin-top: 5px; }
+        
+        #result-box { display: none; margin-top: 20px; padding: 15px; border-radius: 5px; background: #e8f5e9; border: 1px solid #c8e6c9; }
+        .result-title { font-weight: bold; color: #2e7d32; font-size: 1.1em; margin-bottom: 10px; }
+        .loader { display: none; text-align: center; margin-top: 15px; font-weight: bold; color: #007bff; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Report Wildlife Sighting</h1>
+    
+    <form id="reportForm">
+        <div class="form-group">
+            <label>1. Photo Evidence</label>
+            <label class="file-btn" for="image">Take Photo or Upload Image</label>
+            <input type="file" id="image" name="image" accept="image/*" capture="environment" required onchange="previewImage(event)">
+            <img id="preview" alt="Image preview">
+        </div>
+
+        <div class="form-group">
+            <label>2. Location</label>
+            <input type="text" id="location" name="location" placeholder="E.g., Near Sector 4 water tower" required>
+            <button type="button" class="gps-btn" onclick="getGPS()">Use Current GPS Location</button>
+            <input type="hidden" id="lat" name="lat">
+            <input type="hidden" id="lon" name="lon">
+        </div>
+
+        <div class="form-group">
+            <label>3. Optional Description</label>
+            <textarea id="description" name="description" rows="3" placeholder="Describe animal behavior or any risks..."></textarea>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submitBtn">Submit Report</button>
+        <div class="loader" id="loader">Processing AI Image Analysis... Please wait.</div>
+    </form>
+
+    <div id="result-box">
+        <div class="result-title">Report Submitted Successfully!</div>
+        <div id="result-content"></div>
+    </div>
+</div>
+
+<script>
+    function previewImage(event) {
+        const preview = document.getElementById('preview');
+        const file = event.target.files[0];
+        if (file) {
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+        }
+    }
+
+    function getGPS() {
+        if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition((pos) => {
+                document.getElementById('lat').value = pos.coords.latitude;
+                document.getElementById('lon').value = pos.coords.longitude;
+                document.getElementById('location').value = `GPS: ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
+            }, (err) => {
+                alert("GPS failed: " + err.message);
+            });
+        }
+    }
+
+    document.getElementById('reportForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const submitBtn = document.getElementById('submitBtn');
+        const loader = document.getElementById('loader');
+        const resultBox = document.getElementById('result-box');
+        
+        submitBtn.style.display = 'none';
+        loader.style.display = 'block';
+        resultBox.style.display = 'none';
+
+        const formData = new FormData(this);
+
+        try {
+            const response = await fetch('/api/v2/report', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            
+            loader.style.display = 'none';
+            submitBtn.style.display = 'block';
+
+            if (data.success) {
+                resultBox.style.display = 'block';
+                
+                const species = data.wildlife_detection.species ? data.wildlife_detection.species.toUpperCase() : 'NO WILDLIFE DETECTED';
+                const conf = data.wildlife_detection.confidence ? data.wildlife_detection.confidence : 'N/A';
+                const loc = document.getElementById('location').value;
+                
+                document.getElementById('result-content').innerHTML = `
+                    <div style="margin-bottom: 15px;">
+                        <p><b>REPORT ID:</b> #${data.report_id}</p>
+                        <p><b>Detected species:</b> ${species}</p>
+                        <p><b>AI confidence:</b> ${conf}</p>
+                        <p><b>Location:</b> ${loc}</p>
+                        <p><b>Status:</b> PENDING</p>
+                    </div>
+                    
+                    <div style="background: #ffeaa7; padding: 10px; border-radius: 5px; border: 1px solid #fdcb6e; font-size: 0.9em; font-weight: bold; color: #d63031;">
+                        AI analysis is advisory. Reports may require verification by wildlife authorities.
+                    </div>
+                `;
+                this.reset();
+                document.getElementById('preview').style.display = 'none';
+            } else {
+                alert("Error: " + data.message);
+            }
+        } catch (err) {
+            loader.style.display = 'none';
+            submitBtn.style.display = 'block';
+            alert("Submission failed. Please try again.");
+        }
+    });
+</script>
+
+</body>
+</html>

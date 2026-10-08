@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - Demo Control Panel</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #1a1a2e; color: #fff; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: #16213e; padding: 30px; border-radius: 8px; border-left: 5px solid #ff9800; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        h1 { color: #ff9800; margin-top: 0; text-transform: uppercase; border-bottom: 2px solid #0f3460; padding-bottom: 10px; display: flex; align-items: center; gap: 15px; }
+        .warning-badge { background: #ff9800; color: #000; font-size: 0.5em; padding: 4px 10px; border-radius: 4px; }
+        
+        .disclaimer { background: rgba(255, 152, 0, 0.1); border: 1px solid #ff9800; padding: 15px; border-radius: 4px; margin-bottom: 25px; font-size: 0.9em; color: #ffb74d; }
+        
+        .scenario-list { display: grid; grid-template-columns: 1fr; gap: 15px; }
+        .scenario-card { background: #0f3460; padding: 20px; border-radius: 6px; border: 1px solid #1e3a8a; display: flex; justify-content: space-between; align-items: center; }
+        .scenario-card h3 { margin: 0 0 5px 0; color: #33b5e5; }
+        .scenario-card p { margin: 0; font-size: 0.85em; color: #cbd5e1; }
+        
+        .btn { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; text-transform: uppercase; transition: 0.2s; }
+        .btn-trigger { background: #00C851; color: white; }
+        .btn-trigger:hover { background: #007e33; }
+        .btn-reset { background: #ff4444; color: white; width: 100%; margin-top: 25px; padding: 15px; }
+        .btn-reset:hover { background: #cc0000; }
+        
+        #toast { position: fixed; top: 20px; right: 20px; background: #33b5e5; color: white; padding: 15px 25px; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); font-weight: bold; display: none; z-index: 1000; }
+    </style>
+</head>
+<body>
+
+    <div id="toast"></div>
+
+    <div class="container">
+        <h1>WILDAI CONTROL PANEL <span class="warning-badge">DEMONSTRATION MODE</span></h1>
+        
+        <div class="disclaimer">
+            <b>WARNING:</b> You are in Simulation Mode. Triggering these scenarios will inject simulated events directly into the live database. These events will propagate to the Tactical Map, Incident Ledger, and Analytics engines. All simulated data is permanently watermarked as "SIMULATED DATA".
+        </div>
+
+        <div class="scenario-list">
+            <div class="scenario-card">
+                <div>
+                    <h3>Scenario 1: Tiger near human</h3>
+                    <p>Demonstrates single critical threat detection with proximity risk logic.</p>
+                </div>
+                <button class="btn btn-trigger" onclick="triggerScenario(1)">START SCENARIO</button>
+            </div>
+            
+            <div class="scenario-card">
+                <div>
+                    <h3>Scenario 2: Elephant herd approaching</h3>
+                    <p>Demonstrates multi-animal tracking (high risk) entering populated zones.</p>
+                </div>
+                <button class="btn btn-trigger" onclick="triggerScenario(2)">START SCENARIO</button>
+            </div>
+
+            <div class="scenario-card">
+                <div>
+                    <h3>Scenario 3: Route Blockage</h3>
+                    <p>Demonstrates routing recalculation caused by a critical incident dropping on the primary evacuation path.</p>
+                </div>
+                <button class="btn btn-trigger" onclick="triggerScenario(3)">START SCENARIO</button>
+            </div>
+
+            <div class="scenario-card">
+                <div>
+                    <h3>Scenario 4: Multiple Incidents</h3>
+                    <p>Stress-tests the map clustering and incident ledger with simultaneous scattered alerts.</p>
+                </div>
+                <button class="btn btn-trigger" onclick="triggerScenario(4)">START SCENARIO</button>
+            </div>
+        </div>
+
+        <button class="btn btn-reset" onclick="resetDemo()">RESET ALL SIMULATED DATA</button>
+    </div>
+
+    <script>
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.style.display = 'block';
+            setTimeout(() => { toast.style.display = 'none'; }, 3000);
+        }
+
+        async function triggerScenario(id) {
+            if (!confirm(`Deploy Scenario ${id} into the live system?`)) return;
+            
+            try {
+                const res = await fetch(`/api/demo/scenario/${id}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message);
+                }
+            } catch(e) {
+                alert("Connection error.");
+            }
+        }
+
+        async function resetDemo() {
+            if (!confirm("Are you sure you want to PURGE all simulated data from the database? Production data will be preserved.")) return;
+            
+            try {
+                const res = await fetch(`/api/demo/reset`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(data.message);
+                }
+            } catch(e) {
+                alert("Connection error.");
+            }
+        }
+    </script>
+</body>
+</html>

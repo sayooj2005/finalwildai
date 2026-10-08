@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WILDAI Geospatial Intelligence</title>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- MarkerCluster CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+    <!-- Turf.js for Spatial Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a2e; color: #fff; }
+        
+        .header { background: #16213e; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #00C851; z-index: 1000; }
+        .header h1 { margin: 0; font-size: 1.5em; letter-spacing: 1px; }
+        
+        .controls { display: flex; gap: 10px; }
+        .btn { background: #0f3460; color: #fff; border: 1px solid #33b5e5; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn:hover { background: #33b5e5; color: #000; }
+        
+        #map { flex: 1; width: 100%; z-index: 1; }
+        
+        /* Custom Map Tooltips & Popups */
+        .leaflet-popup-content-wrapper { background: #16213e; color: #fff; border: 1px solid #33b5e5; border-radius: 4px; }
+        .leaflet-popup-tip { background: #16213e; border: 1px solid #33b5e5; }
+        .leaflet-popup-content h3 { margin: 0 0 10px 0; border-bottom: 1px solid #33b5e5; padding-bottom: 5px; color: #00C851; text-transform: uppercase; }
+        .leaflet-popup-content p { margin: 5px 0; font-size: 14px; }
+        
+        /* Legend Control */
+        .info.legend { background: rgba(22, 33, 62, 0.9); padding: 10px; border: 1px solid #33b5e5; border-radius: 5px; color: white; line-height: 24px; font-size: 14px; }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; border-radius: 3px; }
+        
+        .disclaimer { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 5px 15px; border-radius: 20px; font-size: 12px; z-index: 1000; pointer-events: none; border: 1px solid #555; }
+        
+        /* Custom Marker CSS */
+        .pulse-icon { border-radius: 50%; border: 2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+        
+        @media (max-width: 600px) {
+            .header { flex-direction: column; align-items: flex-start; gap: 10px; padding: 15px; }
+            .header h1 { font-size: 1.2em; }
+            .controls { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
+            .disclaimer { font-size: 10px; padding: 5px; width: 90%; text-align: center; }
+            .info.legend { font-size: 12px; line-height: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>WILDAI Geospatial Intelligence</h1>
+        <div class="controls">
+            <button class="btn" onclick="locateUser()">Locate Me</button>
+            <button class="btn" onclick="calculateSafeRoute()" style="background: #00C851; color: black; border-color: #00C851;">Find Safe Route</button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+    <div class="disclaimer">DISCLAIMER: Map provided for decision support. Does not replace emergency protocols. Wildlife movement is uncertain.</div>
+
+    <script>
+        // Initialize Map
+        const base_lat = 11.6600, base_lon = 76.2500;
+        const map = L.map('map', { zoomControl: false }).setView([base_lat, base_lon], 15);
+        
+        // Add Zoom Control to Top Right
+        L.control.zoom({ position: 'topright' }).addTo(map);
+
+        // Base Layers
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
+        const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: 'Map data: &copy; OpenStreetMap' }).addTo(map);
+
+        // Feature Groups & Clusters
+        const camerasLayer = L.layerGroup();
+        const safeZonesLayer = L.layerGroup();
+        const restrictedLayer = L.layerGroup();
+        const activeRiskLayer = L.layerGroup();
+        const routesLayer = L.layerGroup().addTo(map);
+        
+        // Clustering for high volume
+        const wildlifeCluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 40 });
+        const humanCluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 40 });
+        const incidentCluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 40 });
+
+        // User Location
+        let userMarker = null;
+
+        // Custom Icons
+        const createCustomIcon = (color) => L.divIcon({ className: 'pulse-icon', html: `<div style="background-color: ${color}; width: 100%; height: 100%; border-radius: 50%;"></div>`, iconSize: [16, 16] });
+
+        // Layer Control
+        const baseMaps = { "Topographic": topoLayer, "Satellite": satelliteLayer };
+        const overlayMaps = {
+            "Active Incidents (High Risk)": incidentCluster,
+            "Wildlife Detections": wildlifeCluster,
+            "Human Detections": humanCluster,
+            "Risk Zones": activeRiskLayer,
+            "Cameras": camerasLayer,
+            "Restricted Areas": restrictedLayer,
+            "Evacuation Points": safeZonesLayer
+        };
+        L.control.layers(baseMaps, overlayMaps, { position: 'topright' }).addTo(map);
+
+        // Legend
+        const legend = L.control({position: 'bottomright'});
+        legend.onAdd = function () {
+            const div = L.DomUtil.create('div', 'info legend');
+            div.innerHTML = `
+                <h4>Risk Legend</h4>
+                <i style="background: #ff4444"></i> Critical Incident<br>
+                <i style="background: #ff9800"></i> Wildlife<br>
+                <i style="background: #33b5e5"></i> Human/Poacher<br>
+                <i style="background: rgba(255,0,0,0.3)"></i> Active Risk Zone<br>
+                <i style="background: rgba(0,0,0,0.5)"></i> Restricted Forest<br>
+                <i style="background: rgba(0,200,81,0.5)"></i> Safe Zone<br>
+            `;
+            return div;
+        };
+        legend.addTo(map);
+
+        // Load Data
+        async function fetchGeospatialData() {
+            try {
+                const res = await fetch('/api/geospatial/data');
+                const data = await res.json();
+                
+                // Clear existing
+                camerasLayer.clearLayers();
+                safeZonesLayer.clearLayers();
+                restrictedLayer.clearLayers();
+                activeRiskLayer.clearLayers();
+                wildlifeCluster.clearLayers();
+                humanCluster.clearLayers();
+                incidentCluster.clearLayers();
+
+                // Plot Restricted Areas
+                data.restricted_zones.forEach(z => {
+                    L.circle(z.center, { radius: z.radius_meters, color: '#000', fillColor: '#000', fillOpacity: 0.5, weight: 2 })
+                     .bindPopup(`<b>${z.name}</b><br>Strictly prohibited access.`)
+                     .addTo(restrictedLayer);
+                });
+
+                // Plot Risk Zones
+                data.active_risk_zones.forEach(z => {
+                    let color = z.risk_level === 'CRITICAL' ? '#ff4444' : '#ff9800';
+                    L.circle([z.lat, z.lon], { radius: z.radius_meters, color: color, fillColor: color, fillOpacity: 0.3, weight: 2 })
+                     .bindPopup(`<b>DANGER ZONE</b><br>Species: ${z.species}<br>Level: ${z.risk_level}`)
+                     .addTo(activeRiskLayer);
+                });
+
+                // Plot Safe Zones
+                data.safe_zones.forEach(z => {
+                    L.circle([z.lat, z.lon], { radius: 100, color: '#00C851', fillColor: '#00C851', fillOpacity: 0.5, weight: 2 })
+                     .bindPopup(`<b>${z.name}</b><br>Capacity: ${z.capacity}`)
+                     .addTo(safeZonesLayer);
+                });
+
+                // Plot Cameras
+                data.cameras.forEach(c => {
+                    L.marker([c.lat, c.lon], { icon: createCustomIcon('#aaa') })
+                     .bindPopup(`<b>CAMERA: ${c.name}</b><br>ID: ${c.id}<br>Status: ${c.status}`)
+                     .addTo(camerasLayer);
+                });
+
+                // Plot Incidents
+                data.incidents.forEach(i => {
+                    const marker = L.marker([i.lat, i.lon], { icon: createCustomIcon('#ff4444') });
+                    const simTag = i.is_simulated ? '<div style="background:#ff9800; color:#000; font-weight:bold; padding:2px 5px; text-align:center; font-size:10px; margin-bottom:5px;">SIMULATED DATA</div>' : '';
+                    marker.bindPopup(`
+                        ${simTag}
+                        <h3>CRITICAL INCIDENT #${i.id}</h3>
+                        <p><b>Species:</b> ${i.species}</p>
+                        <p><b>Location:</b> ${i.location || 'N/A'}</p>
+                        <p><b>Risk:</b> ${i.risk || 'CRITICAL'}</p>
+                        <p><b>Time:</b> ${new Date(i.timestamp).toLocaleTimeString()}</p>
+                        <p><b>Status:</b> ${i.status}</p>
+                    `);
+                    incidentCluster.addLayer(marker);
+                });
+
+                // Plot Wildlife
+                data.wildlife.forEach(w => {
+                    const marker = L.marker([w.lat, w.lon], { icon: createCustomIcon('#ff9800') });
+                    const simTag = w.is_simulated ? '<div style="background:#ff9800; color:#000; font-weight:bold; padding:2px 5px; text-align:center; font-size:10px; margin-bottom:5px;">SIMULATED DATA</div>' : '';
+                    marker.bindPopup(`
+                        ${simTag}
+                        <h3>Wildlife Detected</h3>
+                        <p><b>Species:</b> ${w.species}</p>
+                        <p><b>Track ID:</b> #${w.track_id}</p>
+                        <p><b>Confidence:</b> ${w.confidence || 'N/A'}</p>
+                        <p><b>Time:</b> ${new Date(w.timestamp).toLocaleTimeString()}</p>
+                        <p><b>Movement:</b> ${w.movement || 'Observed'}</p>
+                        <p><b>Camera:</b> ${w.camera}</p>
+                    `);
+                    wildlifeCluster.addLayer(marker);
+                });
+
+                // Plot Humans
+                data.humans.forEach(h => {
+                    const marker = L.marker([h.lat, h.lon], { icon: createCustomIcon('#33b5e5') });
+                    marker.bindPopup(`
+                        <h3>Human Presence</h3>
+                        <p><b>Track ID:</b> #${h.track_id}</p>
+                        <p><b>Confidence:</b> ${h.confidence || 'N/A'}</p>
+                        <p><b>Time:</b> ${new Date(h.timestamp).toLocaleTimeString()}</p>
+                        <p><b>Camera:</b> ${h.camera}</p>
+                    `);
+                    humanCluster.addLayer(marker);
+                });
+
+                // Add to Map by default
+                map.addLayer(camerasLayer);
+                map.addLayer(safeZonesLayer);
+                map.addLayer(restrictedLayer);
+                map.addLayer(activeRiskLayer);
+                map.addLayer(wildlifeCluster);
+                map.addLayer(humanCluster);
+                map.addLayer(incidentCluster);
+                
+                window.geoData = data; // store globally for routing
+            } catch(e) { console.error("Failed to load geospatial data", e); }
+        }
+
+        function locateUser() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    const { latitude, longitude } = pos.coords;
+                    map.setView([latitude, longitude], 16);
+                    if (userMarker) map.removeLayer(userMarker);
+                    userMarker = L.marker([latitude, longitude], { icon: createCustomIcon('#ffffff') }).addTo(map);
+                    userMarker.bindPopup("<b>Current Location</b>").openPopup();
+                });
+            } else {
+                alert("Geolocation is not supported by your browser");
+            }
+        }
+
+        async function calculateSafeRoute() {
+            if (!userMarker && window.geoData && window.geoData.safe_zones.length > 0) {
+                // Simulate user for testing if no GPS
+                const lat = base_lat - 0.008;
+                const lon = base_lon + 0.002;
+                userMarker = L.marker([lat, lon], { icon: createCustomIcon('#ffffff') }).addTo(map);
+            }
+            if(!userMarker) return alert("Please locate yourself first!");
+
+            const userPos = userMarker.getLatLng();
+            const safeZone = window.geoData.safe_zones[0]; // naive pick
+            
+            // OSRM Call
+            const url = `https://router.project-osrm.org/route/v1/foot/${userPos.lng},${userPos.lat};${safeZone.lon},${safeZone.lat}?overview=full&geometries=geojson&alternatives=true`;
+            
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                routesLayer.clearLayers();
+
+                if (data.routes && data.routes.length > 0) {
+                    let bestRoute = null;
+                    let bestScore = Infinity;
+                    let bestReason = "";
+
+                    // Simple Turf.js Risk Evaluator
+                    data.routes.forEach((route, index) => {
+                        const line = turf.lineString(route.geometry.coordinates);
+                        let riskCost = route.distance;
+                        let isBlocked = false;
+
+                        // Check Restricted Intersections
+                        window.geoData.restricted_zones.forEach(z => {
+                            const pt = turf.point([z.center[1], z.center[0]]);
+                            if(turf.booleanIntersects(line, turf.buffer(pt, z.radius_meters, {units: 'meters'}))) {
+                                isBlocked = true;
+                            }
+                        });
+
+                        // Add Risk Zone Penalties
+                        window.geoData.active_risk_zones.forEach(z => {
+                            const pt = turf.point([z.lon, z.lat]);
+                            const dangerRadius = turf.buffer(pt, z.radius_meters, {units: 'meters'});
+                            if(turf.booleanIntersects(line, dangerRadius)) {
+                                riskCost += 50000; // Massive penalty
+                            }
+                        });
+
+                        if (!isBlocked && riskCost < bestScore) {
+                            bestScore = riskCost;
+                            bestRoute = route;
+                            bestReason = riskCost > route.distance 
+                                ? "Alternative route chosen to avoid immediate wildlife risk zone." 
+                                : "Optimal shortest safe path.";
+                        }
+                    });
+
+                    if (bestRoute) {
+                        const routeCoords = bestRoute.geometry.coordinates.map(c => [c[1], c[0]]);
+                        const polyline = L.polyline(routeCoords, { color: '#00C851', weight: 5, opacity: 0.8 }).addTo(routesLayer);
+                        map.fitBounds(polyline.getBounds());
+                        
+                        L.popup()
+                         .setLatLng(routeCoords[Math.floor(routeCoords.length/2)])
+                         .setContent(`<b>LOWER-RISK RECOMMENDED ROUTE</b><br>${bestReason}<br>Distance: ${(bestRoute.distance/1000).toFixed(2)} km`)
+                         .openOn(map);
+                    } else {
+                        alert("No safe routes available. All paths intersect with heavily restricted areas.");
+                    }
+                }
+            } catch (err) {
+                console.error("Routing failed", err);
+            }
+        }
+
+        fetchGeospatialData();
+        setInterval(fetchGeospatialData, 10000); // Auto-refresh data
+    </script>
+</body>
+</html>

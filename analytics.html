@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - Command Analytics Dashboard</title>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+        .dashboard-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #00C851; padding-bottom: 10px; margin-bottom: 20px; }
+        .dashboard-header h1 { margin: 0; color: #2c3e50; }
+        .export-btn { background: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; text-decoration: none; display: inline-block; }
+        .export-btn:hover { background: #0056b3; }
+        
+        .filters { display: flex; gap: 15px; margin-bottom: 20px; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); align-items: center; flex-wrap: wrap; }
+        .filters label { font-weight: bold; margin-right: 5px; }
+        .filters select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
+        
+        .kpi-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .kpi-card { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #00C851; }
+        .kpi-card.alert { border-bottom-color: #ff4444; }
+        .kpi-card h3 { margin: 0; font-size: 0.9em; color: #666; text-transform: uppercase; }
+        .kpi-card .value { font-size: 2em; font-weight: bold; color: #2c3e50; margin-top: 10px; }
+        
+        .charts-container { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .chart-box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .chart-box h3 { margin-top: 0; color: #2c3e50; text-align: center; }
+        
+        .simulated-warning { background: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba; margin-bottom: 20px; display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-header">
+        <h1>WildAI Command Analytics</h1>
+        <a href="/api/analytics/export" class="export-btn" id="exportBtn" target="_blank">Export Raw Report (CSV)</a>
+    </div>
+
+    <div class="simulated-warning" id="simWarning">
+        <b>Warning:</b> Displaying simulated/test data alongside production data. Real historical metrics may be skewed.
+    </div>
+
+    <div class="filters">
+        <div>
+            <label>Timeframe:</label>
+            <select id="f_timeframe" onchange="fetchAnalytics()">
+                <option value="DAILY">Daily (Last 24h)</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="MONTHLY">Monthly</option>
+                <option value="ALL" selected>All Time</option>
+            </select>
+        </div>
+        <div>
+            <label>Species:</label>
+            <select id="f_species" onchange="fetchAnalytics()">
+                <option value="ALL">All Species</option>
+                <option value="tiger">Tiger</option>
+                <option value="elephant">Elephant</option>
+                <option value="person">Human/Poacher</option>
+            </select>
+        </div>
+        <div>
+            <label>Risk Level:</label>
+            <select id="f_risk" onchange="fetchAnalytics()">
+                <option value="ALL">All Levels</option>
+                <option value="CRITICAL">Critical</option>
+                <option value="HIGH">High</option>
+                <option value="WARNING">Warning</option>
+                <option value="INFO">Info</option>
+            </select>
+        </div>
+        <div>
+            <label>Data Mode:</label>
+            <select id="f_simulated" onchange="fetchAnalytics()">
+                <option value="false" selected>Production Only</option>
+                <option value="true">Include Simulated/Test</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="kpi-container">
+        <div class="kpi-card"><div id="kpi_total" class="value">0</div><h3>Total Detections</h3></div>
+        <div class="kpi-card alert"><div id="kpi_tiger" class="value" style="color:#ff4444;">0</div><h3>Tiger Detections</h3></div>
+        <div class="kpi-card alert"><div id="kpi_human" class="value" style="color:#ff9800;">0</div><h3>Human Intrusions</h3></div>
+        <div class="kpi-card alert"><div id="kpi_critical" class="value" style="color:#cc0000;">0</div><h3>High/Critical Events</h3></div>
+        <div class="kpi-card"><div id="kpi_conf" class="value">0%</div><h3>Avg Confidence</h3></div>
+        <div class="kpi-card"><div id="kpi_reports" class="value">0</div><h3>Community Reports</h3></div>
+        <div class="kpi-card"><div id="kpi_resp" class="value">-</div><h3>Avg Response Time</h3></div>
+    </div>
+
+    <div class="charts-container">
+        <div class="chart-box"><h3>Species Distribution</h3><canvas id="chartSpecies"></canvas></div>
+        <div class="chart-box"><h3>Detection & Alert Timeline</h3><canvas id="chartTimeline"></canvas></div>
+        <div class="chart-box"><h3>Location Hotspots</h3><canvas id="chartHotspots"></canvas></div>
+        <div class="chart-box"><h3>Camera Activity</h3><canvas id="chartCamera"></canvas></div>
+    </div>
+
+    <script>
+        let charts = {};
+
+        async function fetchAnalytics() {
+            const timeframe = document.getElementById('f_timeframe').value;
+            const species = document.getElementById('f_species').value;
+            const risk = document.getElementById('f_risk').value;
+            const sim = document.getElementById('f_simulated').value;
+
+            document.getElementById('simWarning').style.display = sim === "true" ? "block" : "none";
+
+            const res = await fetch(`/api/analytics/summary?timeframe=${timeframe}&species=${species}&risk=${risk}&include_simulated=${sim}`);
+            const data = await res.json();
+
+            // Update KPIs
+            document.getElementById('kpi_total').innerText = data.kpis.total_detections;
+            document.getElementById('kpi_tiger').innerText = data.kpis.tiger_detections;
+            document.getElementById('kpi_human').innerText = data.kpis.human_intrusions;
+            document.getElementById('kpi_critical').innerText = data.kpis.high_critical_events;
+            document.getElementById('kpi_conf').innerText = Math.round(data.kpis.avg_confidence * 100) + "%";
+            document.getElementById('kpi_reports').innerText = data.kpis.community_reports;
+            document.getElementById('kpi_resp').innerText = data.kpis.avg_response_time;
+
+            // Render Charts
+            renderPieChart("chartSpecies", data.charts.species_distribution);
+            renderLineChart("chartTimeline", data.charts.timeline, data.charts.risk_timeline);
+            renderBarChart("chartHotspots", data.charts.location_hotspots, "Detections");
+            renderBarChart("chartCamera", data.charts.camera_activity, "Alerts Generated", ["#33b5e5", "#00C851"]);
+        }
+
+        function renderPieChart(canvasId, dataObj) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if (charts[canvasId]) charts[canvasId].destroy();
+            
+            charts[canvasId] = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(dataObj),
+                    datasets: [{
+                        data: Object.values(dataObj),
+                        backgroundColor: ['#ffbb33', '#ff4444', '#00C851', '#33b5e5', '#9933CC']
+                    }]
+                },
+                options: { responsive: true }
+            });
+        }
+
+        function renderBarChart(canvasId, dataObj, labelStr, colors=['#00C851']) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if (charts[canvasId]) charts[canvasId].destroy();
+            
+            charts[canvasId] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(dataObj),
+                    datasets: [{
+                        label: labelStr,
+                        data: Object.values(dataObj),
+                        backgroundColor: colors
+                    }]
+                },
+                options: { responsive: true, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        function renderLineChart(canvasId, timelineObj, riskTimelineObj) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            if (charts[canvasId]) charts[canvasId].destroy();
+            
+            const labels = Object.keys(timelineObj).sort();
+            const totalData = labels.map(l => timelineObj[l]);
+            const criticalData = labels.map(l => riskTimelineObj[l] ? riskTimelineObj[l]['CRITICAL'] : 0);
+            
+            charts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        { label: 'Total Alerts', data: totalData, borderColor: '#33b5e5', fill: false, tension: 0.2 },
+                        { label: 'Critical Events', data: criticalData, borderColor: '#ff4444', fill: false, tension: 0.2 }
+                    ]
+                },
+                options: { responsive: true, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        // Init
+        fetchAnalytics();
+    </script>
+</body>
+</html>

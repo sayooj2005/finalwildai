@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - System Diagnostics</title>
+    <style>
+        :root { --bg: #0a0a0a; --panel: #111; --border: #333; --text: #eee; --accent: #00C851; --danger: #ff4444; }
+        body { font-family: 'Consolas', 'Courier New', monospace; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; box-sizing: border-box; }
+        
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--accent); padding-bottom: 10px; margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 1.5rem; text-transform: uppercase; color: var(--accent); }
+        .last-update { font-size: 0.9em; color: #888; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 4px; padding: 15px; position: relative; }
+        .card h2 { margin: 0 0 15px 0; font-size: 1.1rem; border-bottom: 1px solid #222; padding-bottom: 5px; text-transform: uppercase; color: #ccc; }
+        
+        .status-badge { position: absolute; top: 15px; right: 15px; padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 0.8rem; }
+        .status-ONLINE { background: rgba(0, 200, 81, 0.2); color: var(--accent); border: 1px solid var(--accent); }
+        .status-OFFLINE { background: rgba(255, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .status-DEGRADED { background: rgba(255, 187, 51, 0.2); color: #ffbb33; border: 1px solid #ffbb33; }
+        
+        .data-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        .data-row .lbl { color: #888; }
+        .data-row .val { font-weight: bold; }
+        
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; border-top: 1px dashed var(--border); padding-top: 15px; }
+        .m-box { background: #050505; padding: 10px; border-radius: 4px; border: 1px solid #222; text-align: center; }
+        .m-box .m-lbl { display: block; font-size: 0.75rem; color: #666; text-transform: uppercase; margin-bottom: 5px; }
+        .m-box .m-val { font-size: 1.2rem; font-weight: bold; color: var(--accent); }
+        
+        button { background: transparent; color: var(--accent); border: 1px solid var(--accent); padding: 8px 15px; cursor: pointer; border-radius: 4px; font-family: inherit; font-weight: bold; }
+        button:hover { background: rgba(0, 200, 81, 0.1); }
+        
+        @media (max-width: 700px) {
+            .metrics-grid[style] { grid-template-columns: repeat(3, 1fr) !important; }
+        }
+        @media (max-width: 450px) {
+            .metrics-grid[style] { grid-template-columns: repeat(2, 1fr) !important; }
+            .header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            button { margin-left: 0 !important; margin-top: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>System Health Diagnostics</h1>
+        <div>
+            <span class="last-update" id="last-update">Waiting for data...</span>
+            <button onclick="fetchDiagnostics()" style="margin-left: 15px;">Force Refresh</button>
+        </div>
+    </div>
+
+    <div class="grid" id="main-grid">
+        <!-- Rendered by JS -->
+    </div>
+
+    <script>
+        async function fetchDiagnostics() {
+            try {
+                const res = await fetch('/api/system/status');
+                const data = await res.json();
+                
+                document.getElementById('last-update').innerText = 'Last updated: ' + new Date().toLocaleTimeString();
+                
+                const grid = document.getElementById('main-grid');
+                grid.innerHTML = '';
+                
+                // Microservices Array
+                const services = [
+                    { key: "BACKEND", name: "Backend API Router" },
+                    { key: "DATABASE", name: "SQLite Database" },
+                    { key: "ALERT_SERVICE", name: "Notification Bus" },
+                    { key: "SMS_SERVICE", name: "Twilio/Fast2SMS Edge" },
+                    { key: "MAP_SERVICE", name: "Geospatial Tile Server" },
+                    { key: "ROUTING_SERVICE", name: "OSRM Route Engine" }
+                ];
+                
+                // 1. AI Model Card
+                const ai = data.AI_MODEL || {};
+                grid.innerHTML += `
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <h2>AI Inference Engine</h2>
+                        <span class="status-badge status-${ai.status || 'OFFLINE'}">${ai.status || 'OFFLINE'}</span>
+                        <div class="metrics-grid" style="grid-template-columns: repeat(6, 1fr);">
+                            <div class="m-box"><span class="m-lbl">Model</span><span class="m-val" style="font-size: 0.9em; color:#fff">${ai.model || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Device</span><span class="m-val">${ai.device || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Inference FPS</span><span class="m-val">${ai.fps || 0}</span></div>
+                            <div class="m-box"><span class="m-lbl">Latency</span><span class="m-val">${ai.latency || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Conf Threshold</span><span class="m-val">${ai.threshold || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Loaded Classes</span><span class="m-val">${ai.loaded_classes || 0}</span></div>
+                        </div>
+                    </div>
+                `;
+                
+                // 2. Camera Stream Card
+                const cam = data.CAMERA || {};
+                grid.innerHTML += `
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <h2>Primary Camera Stream (CAM_01)</h2>
+                        <span class="status-badge status-${cam.status || 'OFFLINE'}">${cam.status || 'OFFLINE'}</span>
+                        <div class="metrics-grid" style="grid-template-columns: repeat(5, 1fr);">
+                            <div class="m-box"><span class="m-lbl">Resolution</span><span class="m-val" style="font-size: 1rem; color:#fff">${cam.resolution || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Capture FPS</span><span class="m-val">${cam.fps || 0}</span></div>
+                            <div class="m-box"><span class="m-lbl">Stream Latency</span><span class="m-val">${cam.latency || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Last Frame</span><span class="m-val" style="font-size: 0.8rem; color:#ccc">${cam.last_frame || '-'}</span></div>
+                            <div class="m-box"><span class="m-lbl">Connection</span><span class="m-val" style="color: ${cam.status==='ONLINE'?'var(--accent)':'var(--danger)'}">${cam.status || 'LOST'}</span></div>
+                        </div>
+                    </div>
+                `;
+                
+                // 3. Microservices Cards
+                services.forEach(svc => {
+                    const block = data[svc.key] || { status: "OFFLINE", latency: "-", heartbeat: "-", errors: 0 };
+                    const errColor = block.errors > 0 ? "var(--danger)" : "var(--accent)";
+                    
+                    let hbDisplay = block.heartbeat === "-" ? "-" : block.heartbeat.split("T")[1].split(".")[0];
+                    
+                    grid.innerHTML += `
+                        <div class="card">
+                            <h2>${svc.name}</h2>
+                            <span class="status-badge status-${block.status}">${block.status}</span>
+                            <div class="data-row"><span class="lbl">Latency:</span><span class="val">${block.latency}</span></div>
+                            <div class="data-row"><span class="lbl">Last Heartbeat:</span><span class="val">${hbDisplay}</span></div>
+                            <div class="data-row"><span class="lbl">Error Count:</span><span class="val" style="color: ${errColor}">${block.errors}</span></div>
+                        </div>
+                    `;
+                });
+                
+            } catch(e) {
+                document.getElementById('last-update').innerText = 'Connection Error!';
+                document.getElementById('last-update').style.color = 'var(--danger)';
+            }
+        }
+        
+        fetchDiagnostics();
+        setInterval(fetchDiagnostics, 5000);
+    </script>
+</body>
+</html>
