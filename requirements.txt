@@ -8,3 +8,6 @@ ultralytics>=8.3.0
 python-multipart
 opencv-python-headless
 numpy
+exifread>=3.0.0
+imagehash>=4.3.0
+scipy

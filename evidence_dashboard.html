@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - Wildlife Evidence Verification Dashboard</title>
+    <!-- Leaflet GIS Map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-dark: #1e293b;
+            --panel-card: #243247;
+            --text-light: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #334155;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .navbar {
+            background: var(--panel-dark);
+            padding: 12px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .navbar h1 { margin: 0; font-size: 1.3rem; letter-spacing: 1px; }
+        .navbar h1 span { color: var(--accent); }
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active { color: var(--accent); font-weight: 600; }
+
+        .dashboard-layout {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+        }
+
+        /* Sidebar Submissions Queue */
+        .sidebar {
+            width: 360px;
+            background: var(--panel-dark);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .sidebar-header h2 { margin: 0; font-size: 1.1rem; }
+        .filter-row { display: flex; gap: 8px; }
+        .filter-row select {
+            flex: 1;
+            background: #0f172a;
+            border: 1px solid var(--border);
+            color: var(--text-light);
+            padding: 6px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .submission-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .submission-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .submission-item:hover { background: rgba(59, 130, 246, 0.08); }
+        .submission-item.active {
+            background: rgba(59, 130, 246, 0.15);
+            border-left: 4px solid var(--primary);
+        }
+
+        .item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .item-id { font-weight: 700; font-size: 0.88rem; color: #93c5fd; }
+        .item-time { font-size: 0.75rem; color: var(--text-muted); }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge.accepted { background: rgba(16, 185, 129, 0.2); color: var(--accent); border: 1px solid var(--accent); }
+        .badge.flagged { background: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }
+        .badge.rejected { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .badge.pending { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); }
+        .badge.verified { background: rgba(16, 185, 129, 0.2); color: var(--accent); }
+
+        /* Main Detailed Review View */
+        .main-panel {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .empty-placeholder {
+            margin: auto;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .detail-view { display: none; }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 15px;
+        }
+        .detail-header h2 { margin: 0; font-size: 1.4rem; }
+
+        .grid-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .box {
+            background: var(--panel-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .box h3 { margin: 0 0 12px; font-size: 1rem; color: #cbd5e1; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 6px; }
+
+        /* Image Display */
+        .evidence-img-container {
+            background: #000;
+            border-radius: 8px;
+            text-align: center;
+            overflow: hidden;
+            height: 340px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid var(--border);
+            position: relative;
+        }
+        .evidence-img-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        /* Map Container */
+        #detailMap {
+            height: 240px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        /* Metadata & Audit Lists */
+        .meta-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.88rem;
+        }
+        .meta-row .label { color: var(--text-muted); }
+        .meta-row .value { font-weight: 600; text-align: right; }
+
+        .warning-pill {
+            background: rgba(245, 158, 11, 0.15);
+            border-left: 3px solid var(--warning);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: #fde68a;
+            margin-bottom: 8px;
+        }
+
+        /* Action Buttons */
+        .action-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+        }
+        .btn-act {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 0.9rem;
+            transition: opacity 0.2s;
+        }
+        .btn-act:hover { opacity: 0.9; }
+        .btn-verify { background: var(--accent); color: #0f172a; }
+        .btn-reject { background: var(--danger); color: #fff; }
+        .btn-review { background: var(--warning); color: #0f172a; }
+
+        @media (max-width: 900px) {
+            .dashboard-layout { flex-direction: column; }
+            .sidebar { width: 100%; height: 260px; }
+            .grid-2col { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <h1>WILD<span>AI</span> Evidence Verification Dashboard</h1>
+        <div class="nav-links">
+            <a href="/">Hub Home</a>
+            <a href="/evidence-submission">Submit Evidence</a>
+            <a href="/evidence-dashboard" class="active">Officer Dashboard</a>
+            <a href="/map">Tactical Map</a>
+        </div>
+    </div>
+
+    <div class="dashboard-layout">
+        <!-- Sidebar: Submission Queue -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Evidence Queue</h2>
+                <div class="filter-row">
+                    <select id="filterOutcome" onchange="loadSubmissions()">
+                        <option value="ALL">All Outcomes</option>
+                        <option value="ACCEPTED FOR REVIEW">Accepted</option>
+                        <option value="FLAGGED FOR REVIEW">Flagged</option>
+                        <option value="REJECTED">Rejected</option>
+                    </select>
+                    <select id="filterStatus" onchange="loadSubmissions()">
+                        <option value="ALL">All Review Statuses</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="VERIFIED">Verified</option>
+                        <option value="REJECTED">Rejected</option>
+                        <option value="UNDER_REVIEW">Under Review</option>
+                    </select>
+                </div>
+            </div>
+            <ul class="submission-list" id="submissionList">
+                <!-- Injected via JavaScript -->
+            </ul>
+        </div>
+
+        <!-- Main Panel: Detailed Verification Evidence -->
+        <div class="main-panel">
+            <div class="empty-placeholder" id="placeholder">
+                <p>Select a wildlife evidence submission from the left queue to inspect verification findings.</p>
+            </div>
+
+            <div class="detail-view" id="detailView">
+                <div class="detail-header">
+                    <div>
+                        <h2 id="dSubId">EV-XXXX</h2>
+                        <span style="font-size: 0.85rem; color: var(--text-muted);" id="dTimestamp">--</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <span class="badge" id="dOutcomeBadge">ACCEPTED</span>
+                        <span class="badge" id="dStatusBadge">PENDING</span>
+                    </div>
+                </div>
+
+                <!-- Explanation Banner -->
+                <div class="warning-pill" id="dExplanationBanner">
+                    --
+                </div>
+
+                <!-- 2-Column Grid -->
+                <div class="grid-2col">
+                    <!-- Left: Evidence Image Preview & Wildlife Detection -->
+                    <div class="box">
+                        <h3>Photographic Evidence & AI Wildlife Detection</h3>
+                        <div class="evidence-img-container">
+                            <img id="dImg" src="" alt="Evidence Image">
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <div class="meta-row">
+                                <span class="label">Suspected Species (User)</span>
+                                <span class="value" id="dSuspectedSpecies">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">YOLO Detected Species</span>
+                                <span class="value" id="dYoloSpecies" style="color: var(--accent);">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">YOLO Confidence</span>
+                                <span class="value" id="dYoloConf">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Model Note</span>
+                                <span class="value" style="font-size: 0.78rem; color: var(--text-muted);">Tigers & Boars not standard COCO classes</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right: Metadata & EXIF Analysis -->
+                    <div class="box">
+                        <h3>Metadata Extraction & Forensics</h3>
+                        <div class="meta-row">
+                            <span class="label">EXIF Presence</span>
+                            <span class="value" id="dExifStatus">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">Camera Device</span>
+                            <span class="value" id="dCamera">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">Lens Information</span>
+                            <span class="value" id="dLens">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">EXIF Capture Timestamp</span>
+                            <span class="value" id="dExifTime">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">Source Type</span>
+                            <span class="value" id="dSourceType">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">Editing Software History</span>
+                            <span class="value" id="dSoftware">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">AI Forensics Evaluation</span>
+                            <span class="value" id="dForensicsVerdict">--</span>
+                        </div>
+                        <div class="meta-row">
+                            <span class="label">Duplicates (pHash / SHA256)</span>
+                            <span class="value" id="dDuplicates">--</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Location Verification & Map Section -->
+                <div class="box">
+                    <h3>Trivandrum Location Consistency Verification</h3>
+                    <div class="grid-2col" style="margin-top: 10px;">
+                        <div>
+                            <div class="meta-row">
+                                <span class="label">Classification</span>
+                                <span class="value" id="dLocClassification">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Reported Location</span>
+                                <span class="value" id="dReportedLoc">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Embedded GPS</span>
+                                <span class="value" id="dEmbeddedGps">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Discrepancy Distance</span>
+                                <span class="value" id="dDistance">--</span>
+                            </div>
+                            <div class="meta-row">
+                                <span class="label">Target Surveillance Region</span>
+                                <span class="value">Thiruvananthapuram, Kerala, India</span>
+                            </div>
+                        </div>
+                        <div id="detailMap"></div>
+                    </div>
+                </div>
+
+                <!-- Officer Decision & Audit Section -->
+                <div class="box">
+                    <h3>Forest Officer Review & Audit Trail</h3>
+                    <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                        <input type="text" id="reviewerNotes" placeholder="Enter officer verification notes..." style="flex: 1; background: #0f172a; border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px;">
+                    </div>
+                    <div class="action-row">
+                        <button class="btn-act btn-verify" onclick="submitReview('VERIFIED')">✓ Verify Evidence</button>
+                        <button class="btn-act btn-reject" onclick="submitReview('REJECTED')">✕ Reject Submission</button>
+                        <button class="btn-act btn-review" onclick="submitReview('UNDER_REVIEW')">⟳ Flag for Field Team</button>
+                    </div>
+
+                    <div style="margin-top: 15px;">
+                        <h4 style="margin: 0 0 8px; font-size: 0.9rem; color: var(--text-muted);">Audit Trail History:</h4>
+                        <div id="auditList" style="font-size: 0.8rem; color: var(--text-muted);">--</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let submissions = [];
+        let selectedSubmissionId = null;
+        let detailMap = null;
+        let mapMarkers = [];
+
+        async function loadSubmissions() {
+            const outcome = document.getElementById('filterOutcome').value;
+            const status = document.getElementById('filterStatus').value;
+            try {
+                const res = await fetch(`/api/evidence?outcome=${outcome}&status=${status}`);
+                submissions = await res.json();
+                renderSubmissionList();
+                if (selectedSubmissionId) {
+                    loadEvidenceDetails(selectedSubmissionId);
+                }
+            } catch (e) {
+                console.error("Failed to load evidence submissions", e);
+            }
+        }
+
+        function renderSubmissionList() {
+            const ul = document.getElementById('submissionList');
+            ul.innerHTML = '';
+            if (submissions.length === 0) {
+                ul.innerHTML = '<li style="padding: 15px; color: var(--text-muted); font-size: 0.85rem;">No submissions found.</li>';
+                return;
+            }
+
+            submissions.forEach(sub => {
+                const li = document.createElement('li');
+                li.className = `submission-item ${sub.submission_id === selectedSubmissionId ? 'active' : ''}`;
+                li.onclick = () => loadEvidenceDetails(sub.submission_id);
+
+                const outcomeClass = sub.decision_outcome === 'ACCEPTED FOR REVIEW' ? 'accepted' :
+                                     sub.decision_outcome === 'FLAGGED FOR REVIEW' ? 'flagged' : 'rejected';
+                
+                li.innerHTML = `
+                    <div class="item-header">
+                        <span class="item-id">${sub.submission_id}</span>
+                        <span class="badge ${outcomeClass}">${sub.decision_outcome.split(' ')[0]}</span>
+                    </div>
+                    <div style="font-size: 0.85rem; color: #cbd5e1; text-transform: capitalize;">${sub.suspected_animal || 'Unknown species'}</div>
+                    <div class="item-header" style="margin-top: 4px;">
+                        <span style="font-size: 0.75rem; color: var(--text-muted);">${sub.source_type}</span>
+                        <span class="item-time">${new Date(sub.timestamp).toLocaleDateString()}</span>
+                    </div>
+                `;
+                ul.appendChild(li);
+            });
+        }
+
+        async function loadEvidenceDetails(subId) {
+            selectedSubmissionId = subId;
+            renderSubmissionList();
+
+            try {
+                const res = await fetch(`/api/evidence/${subId}`);
+                if (!res.ok) return;
+                const d = await res.json();
+
+                document.getElementById('placeholder').style.display = 'none';
+                document.getElementById('detailView').style.display = 'flex';
+
+                document.getElementById('dSubId').innerText = d.submission_id;
+                document.getElementById('dTimestamp').innerText = `Submitted: ${new Date(d.timestamp).toLocaleString()} | File: ${d.file_name} (${(d.file_size_bytes / 1024).toFixed(1)} KB)`;
+                
+                // Badges
+                const outBadge = document.getElementById('dOutcomeBadge');
+                outBadge.innerText = d.decision_outcome;
+                outBadge.className = 'badge ' + (d.decision_outcome === 'ACCEPTED FOR REVIEW' ? 'accepted' :
+                                                d.decision_outcome === 'FLAGGED FOR REVIEW' ? 'flagged' : 'rejected');
+
+                const statBadge = document.getElementById('dStatusBadge');
+                statBadge.innerText = d.review_status;
+                statBadge.className = 'badge ' + (d.review_status === 'VERIFIED' ? 'verified' :
+                                                d.review_status === 'REJECTED' ? 'rejected' : 'pending');
+
+                document.getElementById('dExplanationBanner').innerText = d.decision_explanation;
+
+                // Photo preview
+                document.getElementById('dImg').src = `/api/evidence/${d.submission_id}/file`;
+
+                // Species
+                document.getElementById('dSuspectedSpecies').innerText = (d.suspected_animal || 'Unknown').toUpperCase();
+                const primarySp = d.wildlife_detection?.primary_detected_species;
+                const spConf = d.wildlife_detection?.highest_confidence;
+                document.getElementById('dYoloSpecies').innerText = primarySp ? primarySp.toUpperCase() : 'None detected';
+                document.getElementById('dYoloConf').innerText = spConf ? `${Math.round(spConf * 100)}%` : 'N/A';
+
+                // Metadata
+                const meta = d.metadata || {};
+                document.getElementById('dExifStatus').innerText = meta.has_exif ? 'Present' : 'Missing (common for CCTV/exports)';
+                document.getElementById('dCamera').innerText = `${meta.camera_make || ''} ${meta.camera_model || ''}`.trim() || 'None recorded';
+                document.getElementById('dLens').innerText = meta.lens_model || 'None recorded';
+                document.getElementById('dExifTime').innerText = meta.capture_timestamp || 'Not embedded';
+                document.getElementById('dSourceType').innerText = d.source_type;
+                document.getElementById('dSoftware').innerText = meta.software_history?.length ? meta.software_history.join(', ') : 'None detected';
+
+                // Forensics & Duplicates
+                document.getElementById('dForensicsVerdict').innerText = `${d.forensics?.verdict || 'UNAVAILABLE'} (${d.forensics?.model_name || 'N/A'})`;
+                const exactDups = d.duplicate_analysis?.exact_matches?.length || 0;
+                const nearDups = d.duplicate_analysis?.near_matches?.length || 0;
+                document.getElementById('dDuplicates').innerText = (exactDups + nearDups) > 0 ? 
+                    `${exactDups} exact, ${nearDups} visually similar` : 'Unique (no duplicates)';
+
+                // Location
+                const loc = d.location_verification || {};
+                document.getElementById('dLocClassification').innerText = loc.classification || 'Location unavailable';
+                document.getElementById('dReportedLoc').innerText = d.reported_location_name ? 
+                    `${d.reported_location_name} (${d.reported_lat || ''}, ${d.reported_lon || ''})` : 'Not provided';
+                document.getElementById('dEmbeddedGps').innerText = (d.metadata?.gps_latitude) ? 
+                    `${d.metadata.gps_latitude}, ${d.metadata.gps_longitude}` : 'None embedded';
+                document.getElementById('dDistance').innerText = loc.distance_km != null ? `${loc.distance_km} km` : 'N/A';
+
+                // Audit history
+                const auditDiv = document.getElementById('auditList');
+                if (d.audit_logs && d.audit_logs.length) {
+                    auditDiv.innerHTML = d.audit_logs.map(l => `<div>• [${new Date(l.timestamp).toLocaleTimeString()}] ${l.action} by ${l.performed_by}: ${l.details || ''}</div>`).join('');
+                } else {
+                    auditDiv.innerText = 'No audit actions recorded yet.';
+                }
+
+                // Render Map
+                renderDetailMap(d);
+
+            } catch (err) {
+                console.error("Error loading detail", err);
+            }
+        }
+
+        function renderDetailMap(d) {
+            if (!detailMap) {
+                detailMap = L.map('detailMap').setView([8.5241, 76.9366], 10);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(detailMap);
+                L.rectangle([[8.15, 76.65], [8.95, 77.35]], {color: "#3b82f6", weight: 1.5, fillOpacity: 0.05}).addTo(detailMap);
+            }
+
+            mapMarkers.forEach(m => detailMap.removeLayer(m));
+            mapMarkers = [];
+
+            const rLat = d.reported_lat;
+            const rLon = d.reported_lon;
+            const eLat = d.metadata?.gps_latitude;
+            const eLon = d.metadata?.gps_longitude;
+
+            if (rLat && rLon) {
+                const m1 = L.marker([rLat, rLon]).bindPopup("Reported Sighting").addTo(detailMap);
+                mapMarkers.push(m1);
+                detailMap.setView([rLat, rLon], 11);
+            }
+
+            if (eLat && eLon) {
+                const m2 = L.circleMarker([eLat, eLon], {color: "#10b981", radius: 8}).bindPopup("Embedded Camera GPS").addTo(detailMap);
+                mapMarkers.push(m2);
+                if (!rLat) detailMap.setView([eLat, eLon], 11);
+            }
+        }
+
+        async function submitReview(status) {
+            if (!selectedSubmissionId) return;
+            const notes = document.getElementById('reviewerNotes').value;
+            if (!confirm(`Confirm marking ${selectedSubmissionId} as ${status}?`)) return;
+
+            try {
+                const res = await fetch(`/api/evidence/${selectedSubmissionId}/review`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa('admin:wildai_secure_2026')
+                    },
+                    body: JSON.stringify({ review_status: status, notes: notes })
+                });
+
+                if (res.ok) {
+                    alert(`Submission marked as ${status}.`);
+                    document.getElementById('reviewerNotes').value = '';
+                    loadSubmissions();
+                } else {
+                    alert("Authorization failed or server error.");
+                }
+            } catch (err) {
+                alert("Network error.");
+            }
+        }
+
+        // Initialize on page load
+        loadSubmissions();
+    </script>
+</body>
+</html>
