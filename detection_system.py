@@ -53,6 +53,25 @@ class WildlifeIoTSystem:
         else:
             print("[SYSTEM] YOLO not available. Running OpenCV AI Pose & Behavior Synthesizer mode.")
 
+        # Target classes allowed for wildlife monitoring & intruder surveillance
+        self.wildlife_classes = {
+            "elephant", "tiger", "leopard", "bear", "deer", "wild boar", "boar", "monkey",
+            "zebra", "giraffe", "cow", "horse", "sheep", "dog", "cat", "bird", "lion", "cheetah"
+        }
+        self.human_classes = {
+            "person", "human", "poacher"
+        }
+        self.allowed_target_classes = self.wildlife_classes | self.human_classes
+
+        # Resolve model class IDs for allowed target classes
+        self.target_class_ids = []
+        if self.model is not None and hasattr(self.model, 'names') and isinstance(self.model.names, dict):
+            for cid, cname in self.model.names.items():
+                cname_clean = str(cname).lower().strip()
+                if cname_clean in self.allowed_target_classes or any(w in cname_clean for w in ["tiger", "elephant", "leopard", "bear", "deer", "boar", "monkey", "person", "human"]):
+                    self.target_class_ids.append(cid)
+            print(f"[SYSTEM] Filtered target classes: {len(self.target_class_ids)} target species/human IDs allowed.")
+
         # Initialize Camera / Capture Source
         self.cap = None
         if capture_index is not None:
@@ -84,22 +103,58 @@ class WildlifeIoTSystem:
         
         # Load independent behavior analysis module
         self.behavior_analyzer = WildlifeBehaviorAnalyzer()
+        self._fallback_id_counter = 100
+        self.active_tracks = {}
 
         print("[SYSTEM] Pose Estimation & Dynamic Risk Engine Active.")
+
+    def _get_or_assign_track_id(self, box_id, raw_class, cx, cy):
+        """
+        Ensures consistent tracking ID even when ByteTrack temporarily drops ID.
+        Uses centroid proximity matching (< 90px) with recent tracks of the same species.
+        """
+        if box_id is not None:
+            try:
+                return int(box_id)
+            except (ValueError, TypeError):
+                pass
+
+        current_time = time.time()
+        best_id = None
+        min_dist = 90.0
+
+        for tid, tdata in getattr(self, 'active_tracks', {}).items():
+            if tdata.get("class") == raw_class and current_time - tdata.get("last_seen", 0) < 2.0:
+                dist = math.sqrt((cx - tdata.get("cx", 0))**2 + (cy - tdata.get("cy", 0))**2)
+                if dist < min_dist:
+                    min_dist = dist
+                    best_id = tdata.get("raw_id")
+
+        if best_id is not None:
+            return best_id
+
+        self._fallback_id_counter += 1
+        return self._fallback_id_counter
 
     def update_stream(self, capture_index):
         """Dynamically switches the camera source to a new IP Webcam or device."""
         self.current_url = capture_index
         if self.cap is not None:
             self.cap.release()
+            self.cap = None
         
         print(f"[SYSTEM] Connecting to new camera stream: {capture_index}")
+        if isinstance(capture_index, str) and capture_index.startswith('http'):
+            # For HTTP IP Webcams, store current_url for background snapshot polling
+            # Avoid blocking the main server thread on synchronous OpenCV network socket connect
+            return True
+
         if isinstance(capture_index, int) and os.name == 'nt':
             self.cap = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
         else:
             self.cap = cv2.VideoCapture(capture_index)
             
-        if not self.cap.isOpened():
+        if self.cap is not None and not self.cap.isOpened():
             print(f"[ERROR] Could not open video stream (Index/File: {capture_index}).")
             return False
         return True
@@ -219,7 +274,20 @@ class WildlifeIoTSystem:
             print("[WARNING] Malformed or empty frame received. Skipping.")
             return frame if frame is not None else np.zeros((320,320,3), dtype=np.uint8), {}
 
-        cv2.putText(frame, "YOLO PIPELINE ACTIVE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+        # Elegant HUD Status pill in top-left
+        h_frame, w_frame, _ = frame.shape
+        hud_scale = max(min(w_frame, h_frame) / 540.0, 0.9)
+        hud_text = "AI BEHAVIORAL SURVEILLANCE ACTIVE"
+        hud_font_scale = 0.52 * hud_scale
+        hud_thick = max(int(1.8 * hud_scale), 1)
+        (htw, hth), _ = cv2.getTextSize(hud_text, cv2.FONT_HERSHEY_SIMPLEX, hud_font_scale, hud_thick)
+        hpad_x = int(10 * hud_scale)
+        hpad_y = int(8 * hud_scale)
+        cv2.rectangle(frame, (14, 14), (14 + htw + 2 * hpad_x, 14 + hth + 2 * hpad_y), (14, 14, 18), -1)
+        cv2.rectangle(frame, (14, 14), (14 + htw + 2 * hpad_x, 14 + hth + 2 * hpad_y), (0, 230, 118), max(int(1.5 * hud_scale), 1))
+        # Text with drop shadow
+        cv2.putText(frame, hud_text, (14 + hpad_x + 1, 14 + hpad_y + hth + 1), cv2.FONT_HERSHEY_SIMPLEX, hud_font_scale, (0, 0, 0), hud_thick + 2, cv2.LINE_AA)
+        cv2.putText(frame, hud_text, (14 + hpad_x, 14 + hpad_y + hth), cv2.FONT_HERSHEY_SIMPLEX, hud_font_scale, (0, 230, 118), hud_thick, cv2.LINE_AA)
 
         start_time = time.time()
         self.frame_counter += 1
@@ -254,9 +322,20 @@ class WildlifeIoTSystem:
         imgsz = int(os.getenv("INFERENCE_SIZE", "320"))
         iou = float(os.getenv("IOU_THRESHOLD", "0.7"))
 
-        # Run YOLO with ByteTrack enabled for persistent object tracking
+        # Run YOLO with ByteTrack enabled for persistent object tracking (filtered to target wildlife/human classes)
         try:
-            results_gen = self.model.track(frame, persist=True, tracker="bytetrack.yaml", stream=True, verbose=False, imgsz=imgsz, iou=iou)
+            track_kwargs = {
+                "persist": True,
+                "tracker": "bytetrack.yaml",
+                "stream": True,
+                "verbose": False,
+                "imgsz": imgsz,
+                "iou": iou
+            }
+            if getattr(self, 'target_class_ids', None):
+                track_kwargs["classes"] = self.target_class_ids
+
+            results_gen = self.model.track(frame, **track_kwargs)
             results = list(results_gen)
         except Exception as e:
             print(f"[ERROR] Inference engine failure: {str(e)}")
@@ -264,6 +343,7 @@ class WildlifeIoTSystem:
 
         # Phase 5: Adaptive ROI (Tiled Inference for Small Objects)
         config_roi = config_data.get("adaptive_roi", {})
+        ignored_boxes = set()
         if config_roi.get("enabled", False):
             extra_synthetic_boxes = []
             for result in results:
@@ -295,9 +375,7 @@ class WildlifeIoTSystem:
                                                 new_x2, new_y2 = cx2_c + cx1, cy2_c + cy1
                                                 trk_id = int(box.id[0]) if box.id is not None else None
                                                 extra_synthetic_boxes.append(SyntheticBox(new_x1, new_y1, new_x2, new_y2, cconf, ccls, trk_id))
-                                                
-                                                # Overwrite original box confidence so we don't process it as low-conf
-                                                box.conf[0] = 0.0 
+                                                ignored_boxes.add(id(box))
             
             if extra_synthetic_boxes:
                 results.append(SyntheticResult(extra_synthetic_boxes))
@@ -307,17 +385,33 @@ class WildlifeIoTSystem:
         detected_count = 0
         detected_threats = []
 
-        # 1. First pass to gather all active humans for distance calculations
+        # 1. First pass: gather active humans and all candidate animal centroids for multi-animal interaction
         active_humans = []
+        other_tracks_candidates = []
         for result in results:
             if result.boxes is not None:
                 for box in result.boxes:
+                    if id(box) in ignored_boxes:
+                        continue
                     cls = int(box.cls[0])
                     label = self.model.names[cls].lower()
-                    if label in ['person', 'human', 'poacher']:
-                        hx1, hy1, hx2, hy2 = map(int, box.xyxy[0])
-                        active_humans.append( (int((hx1+hx2)/2), int((hy1+hy2)/2)) )
-                        
+                    if label not in getattr(self, 'allowed_target_classes', set()) and not any(w in label for w in ["tiger", "elephant", "leopard", "bear", "deer", "boar", "monkey", "person", "human"]):
+                        continue
+                    bx1, by1, bx2, by2 = map(int, box.xyxy[0])
+                    bcx, bcy = int((bx1 + bx2) / 2), int((by1 + by2) / 2)
+                    if label in getattr(self, 'human_classes', {'person', 'human', 'poacher'}):
+                        active_humans.append((bcx, bcy))
+                    else:
+                        other_tracks_candidates.append({
+                            "cx": bcx,
+                            "cy": bcy,
+                            "animal": label,
+                            "bbox": [bx1, by1, bx2, by2]
+                        })
+
+        behavior_events = []
+        seen_tracks_in_frame = set()
+
         for result in results:
             boxes = result.boxes
             if boxes is None: continue
@@ -325,12 +419,24 @@ class WildlifeIoTSystem:
             detected_count += len(boxes)
             
             for box in boxes:
+                if id(box) in ignored_boxes:
+                    continue
                 confidence = float(box.conf[0])
                 cls = int(box.cls[0])
                 label = self.model.names[cls]
-                
-                # Extract ByteTrack ID (if tracking is successful, otherwise fallback)
-                track_id = int(box.id[0]) if box.id is not None else int(time.time() * 1000) % 10000
+                raw_class = label.lower()
+
+                # Filter out any non-target COCO objects (keyboard, book, laptop, chair, etc.)
+                if raw_class not in getattr(self, 'allowed_target_classes', set()) and not any(w in raw_class for w in ["tiger", "elephant", "leopard", "bear", "deer", "boar", "monkey", "person", "human"]):
+                    continue
+
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                cx, cy = int((x1 + x2)/2), int((y1 + y2)/2)
+                w, h = (x2 - x1), (y2 - y1)
+
+                # Extract or assign persistent Track ID (ByteTrack with spatial fallback)
+                raw_box_id = box.id[0] if box.id is not None else None
+                track_id = self._get_or_assign_track_id(raw_box_id, raw_class, cx, cy)
 
                 # Load JSON config
                 import json
@@ -338,37 +444,37 @@ class WildlifeIoTSystem:
                     with open("wildlife_config.json", "r") as f:
                         config_data = json.load(f)
                 except:
-                    config_data = {"temporal_persistence_frames": 3, "classes": {}, "categories": {}}
+                    config_data = {"temporal_persistence_frames": 2, "classes": {}, "categories": {}}
 
-                raw_class = label.lower()
-                cfg_class = config_data.get("classes", {}).get(raw_class, config_data.get("classes", {}).get("default", {"threshold": 0.5, "risk_weight": 10}))
+                cfg_class = config_data.get("classes", {}).get(raw_class, config_data.get("classes", {}).get("default", {"threshold": 0.45, "risk_weight": 10}))
                 
-                # Check confidence threshold for THIS class
-                if confidence < cfg_class.get("threshold", 0.5):
+                # Check confidence threshold for this class
+                if confidence < cfg_class.get("threshold", 0.40):
                     continue
-                    
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cx, cy = int((x1 + x2)/2), int((y1 + y2)/2)
-                w, h = (x2 - x1), (y2 - y1)
 
-                # Format Track ID (e.g. Tiger #T001)
+                # Format Track ID (e.g. Elephant #E001, Tiger #T002)
                 prefix = raw_class[0].upper()
                 formatted_track_id = f"{prefix}{track_id:03d}"
                 
+                if formatted_track_id in seen_tracks_in_frame:
+                    continue
+                seen_tracks_in_frame.add(formatted_track_id)
+
                 # Temporal persistence check
                 track_key = f"{raw_class}_ID{track_id}"
                 history = self.track_history.get(track_key, [])
                 history.append((cx, cy, time.time(), w, h))
-                if len(history) > 30: # Keep longer history for drawing trajectories
+                if len(history) > 35: # Keep trajectory history
                     history.pop(0)
                 self.track_history[track_key] = history
 
-                # Only confirm if it appeared enough times (debounce)
-                if len(history) < config_data.get("temporal_persistence_frames", 3):
+                # Debounce persistence
+                min_persist = config_data.get("temporal_persistence_frames", 2)
+                if len(history) < min_persist:
                     self.unconfirmed_detections += 1
                     continue
 
-                # Advanced Lifecycle State Machine
+                # Active Lifecycle State Machine
                 active = getattr(self, 'active_tracks', {})
                 current_time = time.time()
                 
@@ -377,83 +483,173 @@ class WildlifeIoTSystem:
                     first_seen = current_time
                 else:
                     first_seen = active[formatted_track_id]["first_seen"]
-                    prev_state = active[formatted_track_id]["state"]
-                    # Calculate speed
-                    dt = max(current_time - history[-2][2], 0.01) if len(history)>1 else 0.1
-                    speed = math.sqrt((cx-history[-2][0])**2 + (cy-history[-2][1])**2) / dt
+                    dt = max(current_time - history[-2][2], 0.01) if len(history) > 1 else 0.1
+                    speed_calc = math.sqrt((cx - history[-2][0])**2 + (cy - history[-2][1])**2) / dt
                     
-                    if speed > 50: # pixels per sec
+                    if speed_calc > 45: # pixels per sec
                         state = "OBJECT_MOVING"
                     else:
                         state = "STATIONARY"
                     
-                    # Approaching logic
-                    if state == "OBJECT_MOVING" and (h_frame - cy) < (h_frame * 0.3): # getting close to bottom of frame (camera)
+                    if state == "OBJECT_MOVING" and (h_frame - cy) < (h_frame * 0.35):
                         state = "OBJECT_APPROACHING"
 
                 # Assign Category
                 category = "UNKNOWN"
-                if raw_class in config_data.get("categories", {}).get("HUMAN", []):
+                if raw_class in config_data.get("categories", {}).get("HUMAN", []) or raw_class in getattr(self, 'human_classes', set()):
                     category = "HUMAN"
-                elif raw_class in config_data.get("categories", {}).get("WILDLIFE", []):
+                elif raw_class in config_data.get("categories", {}).get("WILDLIFE", []) or raw_class in getattr(self, 'wildlife_classes', set()):
                     category = "WILDLIFE"
                 
+                # Non-target items are dropped immediately
+                if category == "UNKNOWN":
+                    continue
+
                 detected_threat = raw_class
 
                 if detected_threat:
-                    # Execute independent behavior analysis
+                    # Execute comprehensive behavioral analysis engine
                     behavior_metrics = self.behavior_analyzer.analyze(
                         track_id=formatted_track_id,
                         species=detected_threat,
                         history=history,
                         group_size=len(boxes),
                         first_seen=first_seen,
-                        active_humans=active_humans
+                        active_humans=active_humans,
+                        current_bbox=[x1, y1, x2, y2],
+                        other_tracks=other_tracks_candidates,
+                        frame_shape=(h_frame, w_frame)
                     )
                     
-                    behaviour = behavior_metrics["behaviour"]
+                    behaviour = behavior_metrics["behavior"]
                     velocity = behavior_metrics["speed"]
-                    direction_vector = behavior_metrics["movement_direction"]
+                    direction_vector = behavior_metrics["direction"]
+                    risk_level = behavior_metrics["risk_level"]  # LOW, MEDIUM, HIGH, CRITICAL
+                    danger_level = risk_level.lower()
                     pose_pattern = f"Observable behavior: {behaviour}"
 
-                    # Dynamic Risk Assessment
-                    risk_score, danger_level = self.calculate_dynamic_risk(
-                        detected_threat, behaviour, velocity, direction_vector, group_size=len(boxes), is_night=is_night
-                    )
-                    
+                    # Calculate numerical risk score (0-100) for telemetry dials & gauges
                     base_risk_weight = cfg_class.get("risk_weight", 10)
-                    risk_score = min(int((risk_score + base_risk_weight) / 2), 100)
-
-                    # Color scheme based on danger level
-                    if danger_level == "critical":
-                        box_color = (0, 0, 255)
-                    elif danger_level == "high":
-                        box_color = (0, 140, 255)
-                    elif danger_level == "medium":
-                        box_color = (0, 255, 255)
+                    if risk_level == "CRITICAL":
+                        risk_score = max(85, min(100, int(75 + base_risk_weight * 0.25)))
+                    elif risk_level == "HIGH":
+                        risk_score = max(65, min(84, int(55 + base_risk_weight * 0.25)))
+                    elif risk_level == "MEDIUM":
+                        risk_score = max(40, min(64, int(35 + base_risk_weight * 0.25)))
                     else:
-                        box_color = (0, 255, 0)
+                        risk_score = max(15, min(39, int(15 + base_risk_weight * 0.20)))
 
-                    # Draw Bounding Box
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                    # Color scheme based on risk level
+                    if risk_level == "CRITICAL":
+                        box_color = (0, 0, 255)       # Red
+                    elif risk_level == "HIGH":
+                        box_color = (0, 140, 255)     # Orange
+                    elif risk_level == "MEDIUM":
+                        box_color = (0, 255, 255)     # Yellow
+                    else:
+                        box_color = (0, 255, 0)       # Green
+
+                    # Dynamic scaling relative to frame dimensions
+                    scale = max(min(w_frame, h_frame) / 480.0, 1.0)
+                    font_scale_title = 0.58 * scale
+                    font_scale_sub = 0.48 * scale
+                    font_thick = max(int(1.8 * scale), 1)
+                    box_thick = max(int(2.5 * scale), 2)
+                    line_thick = max(int(2.0 * scale), 2)
+
+                    # Draw Bounding Box with high-contrast corner brackets
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, box_thick)
+                    corner_len = int(min(x2 - x1, y2 - y1) * 0.18)
+                    if corner_len > 8:
+                        c_thick = box_thick + 1
+                        # Top-left corner
+                        cv2.line(frame, (x1, y1), (x1 + corner_len, y1), (255, 255, 255), c_thick)
+                        cv2.line(frame, (x1, y1), (x1, y1 + corner_len), (255, 255, 255), c_thick)
+                        # Top-right corner
+                        cv2.line(frame, (x2, y1), (x2 - corner_len, y1), (255, 255, 255), c_thick)
+                        cv2.line(frame, (x2, y1), (x2, y1 + corner_len), (255, 255, 255), c_thick)
+                        # Bottom-left corner
+                        cv2.line(frame, (x1, y2), (x1 + corner_len, y2), (255, 255, 255), c_thick)
+                        cv2.line(frame, (x1, y2), (x1, y2 - corner_len), (255, 255, 255), c_thick)
+                        # Bottom-right corner
+                        cv2.line(frame, (x2, y2), (x2 - corner_len, y2), (255, 255, 255), c_thick)
+                        cv2.line(frame, (x2, y2), (x2, y2 - corner_len), (255, 255, 255), c_thick)
                     
-                    # Draw Trajectory
+                    # Draw Trajectory line
                     if len(history) > 2:
                         pts = np.array([(pt[0], pt[1]) for pt in history], np.int32)
                         pts = pts.reshape((-1, 1, 2))
-                        cv2.polylines(frame, [pts], False, box_color, 2)
+                        cv2.polylines(frame, [pts], False, box_color, line_thick)
 
-                    # Draw Overlay Badges (Using Formatted Track ID)
-                    badge_text = f"{detected_threat.upper()} #{formatted_track_id} [{risk_score}% RISK]"
-                    cv2.rectangle(frame, (x1, max(y1 - 40, 0)), (x1 + len(badge_text)*10 + 10, y1), box_color, -1)
-                    cv2.putText(frame, badge_text, (x1 + 5, y1 - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+                    # Draw Interaction line if interacting with nearby animal
+                    for other in behavior_metrics.get("interacting_with", []):
+                        ot_id = other.get("track_id")
+                        if ot_id in active:
+                            ot_cx, ot_cy = active[ot_id].get("cx", 0), active[ot_id].get("cy", 0)
+                            cv2.line(frame, (cx, cy), (ot_cx, ot_cy), (0, 255, 255), line_thick, cv2.LINE_AA)
+
+                    # Extended High-Visibility Overlay Badges (Animal, Track ID, Behavior, Risk)
+                    badge_title = f"{detected_threat.upper()} #{formatted_track_id} | {risk_level} RISK ({risk_score}%)"
+                    badge_sub = f"{behaviour.upper()} | {velocity} px/s | {direction_vector.replace('_', ' ').upper()}"
                     
-                    sub_badge = f"{state} | {behaviour}"
-                    cv2.putText(frame, sub_badge, (x1 + 5, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                    (tw1, th1), _ = cv2.getTextSize(badge_title, cv2.FONT_HERSHEY_SIMPLEX, font_scale_title, font_thick)
+                    (tw2, th2), _ = cv2.getTextSize(badge_sub, cv2.FONT_HERSHEY_SIMPLEX, font_scale_sub, max(font_thick - 1, 1))
+                    
+                    pad_x = int(12 * scale)
+                    pad_y = int(8 * scale)
+                    gap_y = int(6 * scale)
+                    badge_w = max(tw1, tw2) + 2 * pad_x
+                    badge_h = th1 + th2 + 2 * pad_y + gap_y
 
-                    # Deduplicated Alert Logic (Trigger only if State changed to high threat or cooldown expired)
+                    # Determine vertical placement (above box if fits, else inside top of box)
+                    if y1 - badge_h - int(6 * scale) >= 0:
+                        by1 = y1 - badge_h - int(6 * scale)
+                    else:
+                        by1 = y1 + int(4 * scale)
+                    by2 = by1 + badge_h
+
+                    # Keep badge strictly inside horizontal frame bounds
+                    bx1 = max(4, min(x1, w_frame - badge_w - 4))
+                    bx2 = min(w_frame - 4, bx1 + badge_w)
+
+                    # Solid high-contrast dark background badge with colored accent border
+                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), (12, 12, 14), -1)
+                    cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, max(int(1.8 * scale), 1))
+
+                    # Subtle separator line between title and subtitle
+                    sep_y = by1 + pad_y + th1 + gap_y // 2
+                    cv2.line(frame, (bx1 + pad_x // 2, sep_y), (bx2 - pad_x // 2, sep_y), (60, 60, 65), 1)
+
+                    # Text Title (Species, ID, Risk) with shadow for crisp readability
+                    t_x, t_y = bx1 + pad_x, by1 + pad_y + th1
+                    cv2.putText(frame, badge_title, (t_x + 1, t_y + 1), cv2.FONT_HERSHEY_SIMPLEX, font_scale_title, (0, 0, 0), font_thick + 2, cv2.LINE_AA)
+                    cv2.putText(frame, badge_title, (t_x, t_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale_title, box_color, font_thick, cv2.LINE_AA)
+
+                    # Text Subtitle (Behavior, Speed, Direction) with shadow
+                    s_x, s_y = bx1 + pad_x, by1 + pad_y + th1 + gap_y + th2
+                    cv2.putText(frame, badge_sub, (s_x + 1, s_y + 1), cv2.FONT_HERSHEY_SIMPLEX, font_scale_sub, (0, 0, 0), max(font_thick, 2), cv2.LINE_AA)
+                    cv2.putText(frame, badge_sub, (s_x, s_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale_sub, (255, 255, 255), max(font_thick - 1, 1), cv2.LINE_AA)
+
+                    # Collect confirmed behavioral events for logging & feed
+                    if behavior_metrics.get("is_event", False):
+                        event_record = {
+                            "timestamp": datetime.now().isoformat(),
+                            "animal": detected_threat,
+                            "track_id": formatted_track_id,
+                            "behavior": behaviour,
+                            "confidence": behavior_metrics["confidence"],
+                            "speed": velocity,
+                            "direction": direction_vector,
+                            "risk_level": risk_level,
+                            "duration": behavior_metrics["duration"],
+                            "camera_id": getattr(self, 'camera_id', 'IP_WEBCAM_01'),
+                            "event_summary": behavior_metrics.get("event_summary", "")
+                        }
+                        behavior_events.append(event_record)
+
+                    # Deduplicated Alert Trigger (HIGH/CRITICAL or charging approach)
                     alert_key = f"alert_{formatted_track_id}"
-                    if danger_level in ["high", "critical"] or state in ["OBJECT_APPROACHING"]:
+                    if danger_level in ["high", "critical"] or behaviour in ["possible charging", "approaching camera"]:
                         if current_time - self.last_alert_time.get(alert_key, 0) > self.alert_cooldown:
                             self.trigger_alert(
                                 track_id=formatted_track_id,
@@ -470,25 +666,38 @@ class WildlifeIoTSystem:
                     # Update Active Tracks Map
                     active[formatted_track_id] = {
                         "class": raw_class,
+                        "raw_id": track_id,
+                        "cx": cx,
+                        "cy": cy,
                         "first_seen": first_seen,
                         "last_seen": current_time,
-                        "state": state
+                        "state": state,
+                        "behavior": behaviour,
+                        "risk_level": risk_level,
+                        "speed": velocity,
+                        "direction": direction_vector
                     }
                     self.active_tracks = active
 
-                    # Store primary telemetry item
+                    # Primary telemetry payload
                     telemetry = {
-                        "track_id": formatted_track_id, # Replaces raw int track_id
+                        "track_id": formatted_track_id,
+                        "raw_track_id": track_id,
                         "animal": detected_threat,
                         "category": category,
                         "confidence": float(confidence),
                         "bbox": [x1, y1, x2, y2],
                         "behaviour": behaviour,
+                        "behavior": behaviour,
+                        "behavior_confidence": behavior_metrics["confidence"],
                         "pose_pattern": pose_pattern,
                         "risk_score": risk_score,
                         "danger_level": danger_level,
+                        "risk_level": risk_level,
                         "movement_vector": direction_vector,
+                        "movement_direction": direction_vector,
                         "velocity_px_sec": round(velocity, 1),
+                        "speed": round(velocity, 1),
                         "distance_travelled": behavior_metrics["distance_travelled"],
                         "human_distance": behavior_metrics["human_distance"],
                         "group_size": len(boxes),
@@ -501,9 +710,11 @@ class WildlifeIoTSystem:
                         "height": h,
                         "trajectory": [(pt[0], pt[1]) for pt in history],
                         "state": state,
-                        "duration": round(current_time - first_seen, 1),
+                        "duration": behavior_metrics["duration"],
+                        "loitering": behavior_metrics.get("loitering", False),
+                        "interacting_with": behavior_metrics.get("interacting_with", []),
                         "timestamp": datetime.now().isoformat(),
-                        "camera_id": getattr(self, 'camera_id', 'default'),
+                        "camera_id": getattr(self, 'camera_id', 'IP_WEBCAM_01'),
                         "frame_id": self.frame_counter
                     }
                     detected_threats.append(telemetry)
@@ -513,11 +724,11 @@ class WildlifeIoTSystem:
         active = getattr(self, 'active_tracks', {})
         lost_ids = []
         for tid, tdata in active.items():
-            if current_time - tdata["last_seen"] > 2.0: # Lost after 2 seconds
+            if current_time - tdata["last_seen"] > 2.5: # Lost after 2.5 seconds
                 tdata["state"] = "OBJECT_LOST"
                 lost_ids.append(tid)
+                self.behavior_analyzer.cleanup_track(tid)
                 
-                # Append to analytics log
                 try:
                     with open("analytics_log.json", "a") as af:
                         af.write(json.dumps(tdata) + "\n")
@@ -539,7 +750,9 @@ class WildlifeIoTSystem:
             "inference_time_ms": round(inference_time, 1),
             "total_detections": detected_count,
             "false_positive_candidates": getattr(self, 'unconfirmed_detections', 0),
-            "threats": detected_threats
+            "threats": detected_threats,
+            "behavior_events": behavior_events,
+            "active_tracks_count": len(self.active_tracks)
         }
 
         return frame, metrics

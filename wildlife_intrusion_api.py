@@ -127,12 +127,13 @@ import numpy as np
 
 async def ipcam_capture_loop():
     global latest_esp32_frame
+    last_connection_state = True
     while True:
         try:
             cam_url = getattr(cloud_iot_detector, 'current_url', None)
             
             if cam_url and isinstance(cam_url, str) and cam_url.startswith('http'):
-                # Handle IP Webcam over laggy WiFi via direct snapshot polling
+                # Handle IP Webcam over WiFi via direct snapshot polling
                 shot_url = cam_url.replace('/video', '/shot.jpg')
                 if not shot_url.endswith('/shot.jpg'):
                     shot_url = shot_url.rstrip('/') + '/shot.jpg'
@@ -144,8 +145,15 @@ async def ipcam_capture_loop():
                 if len(img_array) > 0:
                     latest_esp32_frame = img_array.tobytes()
                     frame_ready_event.set()
+                    if not last_connection_state:
+                        last_connection_state = True
+                        for client in list(connected_dashboard_clients):
+                            try:
+                                await client.send_json({"type": "camera_status", "status": "connected"})
+                            except:
+                                pass
                 
-                await asyncio.sleep(0.1) # Max ~10 FPS for polling
+                await asyncio.sleep(0.08) # ~12 FPS for smooth feed
                 
             elif cloud_iot_detector and cloud_iot_detector.cap and cloud_iot_detector.cap.isOpened():
                 # Handle local USB webcams normally
@@ -154,13 +162,27 @@ async def ipcam_capture_loop():
                     _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
                     latest_esp32_frame = buffer.tobytes()
                     frame_ready_event.set()
+                    if not last_connection_state:
+                        last_connection_state = True
+                        for client in list(connected_dashboard_clients):
+                            try:
+                                await client.send_json({"type": "camera_status", "status": "connected"})
+                            except:
+                                pass
                     await asyncio.sleep(0.03)
                 else:
                     await asyncio.sleep(0.5)
             else:
                 await asyncio.sleep(0.5)
         except Exception as e:
-            # Re-try on timeout or connection drop
+            # Re-try on timeout or connection drop without crashing
+            if last_connection_state:
+                last_connection_state = False
+                for client in list(connected_dashboard_clients):
+                    try:
+                        await client.send_json({"type": "camera_status", "status": "disconnected"})
+                    except:
+                        pass
             await asyncio.sleep(1.0)
 
 async def inference_loop():
@@ -289,13 +311,77 @@ async def inference_loop():
                         ))
                         db.commit()
                         db.close()
-                        print(f"[ROUTE] Animal: {highest['animal']} | Behaviour: {highest.get('behaviour','?')} | → {escape_route['safe_zone_name']} ({escape_route['heading']}, {escape_route['distance_meters']}m)")
+                        print(f"[ROUTE] Animal: {highest['animal']} | Behaviour: {highest.get('behaviour','?')} | -> {escape_route['safe_zone_name']} ({escape_route['heading']}, {escape_route['distance_meters']}m)")
+
+            # ── Behavioral Analysis Persistence & Event Alert Integration ─────
+            behavior_events = metrics.get("behavior_events", [])
+            if behavior_events:
+                db_b = SessionLocal()
+                try:
+                    for ev in behavior_events:
+                        b_entry = models.BehaviorEvent(
+                            animal=ev.get("animal", "wildlife"),
+                            track_id=ev.get("track_id", "T001"),
+                            behavior=ev.get("behavior", "standing"),
+                            confidence=ev.get("confidence", 0.8),
+                            speed=ev.get("speed", 0.0),
+                            direction=ev.get("direction", "none"),
+                            risk_level=ev.get("risk_level", "LOW"),
+                            duration=ev.get("duration", 0.0),
+                            camera_id=ev.get("camera_id", os.getenv("CAMERA_ID", "IP_WEBCAM_01")),
+                            details=ev.get("event_summary", "")
+                        )
+                        db_b.add(b_entry)
+
+                        # Event Alert integration: HIGH or CRITICAL risk behaviors generate an EventAlert
+                        ev_risk = ev.get("risk_level", "LOW").upper()
+                        if ev_risk in ["HIGH", "CRITICAL"]:
+                            snapshot_fn = f"behavior_{ev['animal']}_{ev['track_id']}_{int(time.time())}.jpg"
+                            cv2.imwrite(snapshot_fn, processed_frame)
+                            alert_level_str = "CRITICAL" if ev_risk == "CRITICAL" else "HIGH"
+                            
+                            new_event = models.EventAlert(
+                                alert_level=alert_level_str,
+                                camera_id=os.getenv("CAMERA_ID", "IP_WEBCAM_01"),
+                                location="Sector Zone 1 - Forest Boundary",
+                                species=ev["animal"],
+                                track_id=ev["track_id"],
+                                risk_level=ev_risk.lower(),
+                                confidence=ev.get("confidence", 0.8),
+                                reason=f"Behavioral Indicator: {ev.get('behavior')} ({ev.get('speed', 0)} px/s, {ev.get('direction')})",
+                                snapshot_path=snapshot_fn
+                            )
+                            db_b.add(new_event)
+                    db_b.commit()
+                except Exception as b_err:
+                    print(f"[DB ERROR] Saving behavioral events: {b_err}")
+                    db_b.rollback()
+                finally:
+                    db_b.close()
+
+            # Active behavioral status list
+            active_behaviors = [
+                {
+                    "track_id": d.get("track_id"),
+                    "animal": d.get("animal"),
+                    "behavior": d.get("behavior", d.get("behaviour", "standing")),
+                    "risk_level": d.get("risk_level", "LOW"),
+                    "speed": d.get("speed", d.get("velocity_px_sec", 0.0)),
+                    "direction": d.get("movement_direction", d.get("movement_vector", "stationary")),
+                    "duration": d.get("duration", 0.0),
+                    "confidence": d.get("behavior_confidence", d.get("confidence", 0.8)),
+                    "loitering": d.get("loitering", False)
+                }
+                for d in detections
+            ]
 
             payload = {
                 "type": "detection",
-                "camera_id": os.getenv("CAMERA_ID", "ESP32_CAM_01"),
+                "camera_id": os.getenv("CAMERA_ID", "IP_WEBCAM_01"),
                 "timestamp": datetime.now().isoformat(),
                 "detections": detections,
+                "behavior_events": behavior_events,
+                "active_behaviors": active_behaviors,
                 "diagnostics": {
                     "fps": metrics.get("fps", 0),
                     "inference_time_ms": metrics.get("inference_time_ms", 0)
@@ -880,10 +966,9 @@ async def update_camera_source(request: Request):
         return {"success": False, "message": "URL not provided."}
         
     try:
-        # Convert numeric string to int if it's a local camera index (like "0" or "1")
-        if url.isdigit():
+        if isinstance(url, str) and url.isdigit():
             url = int(url)
-        elif url.startswith("http") and url.count('/') < 4:
+        elif isinstance(url, str) and url.startswith("http") and not url.endswith('/video') and not url.endswith('/shot.jpg'):
             # If they entered http://192.168.1.5:8080, append /video for IP Webcam apps
             if not url.endswith('/'):
                 url += '/video'
@@ -932,6 +1017,59 @@ async def update_event_alert_action(alert_id: int, request: Request, db: Session
     db.commit()
     
     return {"success": True, "message": f"Alert {alert_id} status updated to {alert.acknowledgement_status}"}
+
+# ── Real-Time Wildlife Behavioral Analysis Endpoints ─────────────────────────
+
+@app.get("/api/behavior/active")
+async def get_active_behavior():
+    """Returns currently tracked wildlife and their real-time behavioral classifications."""
+    import time
+    if not cloud_iot_detector:
+        return []
+    active = getattr(cloud_iot_detector, 'active_tracks', {})
+    result = []
+    current_time = time.time()
+    for tid, tdata in active.items():
+        first_s = tdata.get("first_seen", current_time)
+        result.append({
+            "track_id": tid,
+            "animal": tdata.get("class", "wildlife"),
+            "behavior": tdata.get("behavior", "standing"),
+            "risk_level": tdata.get("risk_level", "LOW"),
+            "speed": tdata.get("speed", 0.0),
+            "direction": tdata.get("direction", "stationary"),
+            "first_seen": first_s,
+            "last_seen": tdata.get("last_seen", current_time),
+            "duration": round(current_time - first_s, 1),
+            "timestamp": datetime.now().isoformat()
+        })
+    return result
+
+@app.get("/api/behavior/events")
+async def get_behavior_events(limit: int = 50, db: Session = Depends(get_db)):
+    """Fetch logged behavioral events for timeline, audit, and analytics."""
+    return db.query(models.BehaviorEvent).order_by(models.BehaviorEvent.id.desc()).limit(limit).all()
+
+@app.get("/api/behavior/config")
+async def get_behavior_config():
+    """Retrieve current behavioral analysis heuristics and thresholds."""
+    if not cloud_iot_detector or not hasattr(cloud_iot_detector, 'behavior_analyzer'):
+        from behavior_analysis import BEHAVIOR_CONFIG
+        return BEHAVIOR_CONFIG
+    return cloud_iot_detector.behavior_analyzer.get_config()
+
+@app.post("/api/behavior/config")
+async def update_behavior_config(request: Request):
+    """Dynamically update behavioral analysis heuristics."""
+    if not cloud_iot_detector or not hasattr(cloud_iot_detector, 'behavior_analyzer'):
+        return {"success": False, "message": "Behavior analysis engine unavailable"}
+    data = await request.json()
+    cloud_iot_detector.behavior_analyzer.update_config(data)
+    return {
+        "success": True,
+        "message": "Behavioral configuration updated",
+        "config": cloud_iot_detector.behavior_analyzer.get_config()
+    }
 
 @app.get("/api/geospatial/data")
 async def get_geospatial_data(db: Session = Depends(get_db)):

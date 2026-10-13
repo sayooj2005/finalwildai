@@ -270,7 +270,7 @@
                             </div>
                         </div>
                         <div style="background: #000; border-radius: 12px; padding: 2px; box-shadow: 0 0 40px rgba(0, 230, 118, 0.2); border: 2px solid #1a1a1a;">
-                            <img id="video-stream" src="" alt="Stream Output" style="width: 100%; border-radius: 10px; max-height: 68vh; object-fit: contain; background: #0a0a0a; display: block;">
+                            <img id="video-stream" src="" alt="Stream Output" style="width: 100%; border-radius: 10px; max-height: 52vh; min-height: 320px; object-fit: contain; background: #0a0a0a; display: block; margin: 0 auto;">
                         </div>
                     </div>
                     
@@ -316,6 +316,59 @@
                             <div style="font-weight: 700; color: #ff5252; font-size: 0.85rem;">⚠️ Active Risk Multipliers:</div>
                             <div style="font-size: 0.78rem; color: rgba(255,255,255,0.8); margin-top: 2px;">
                                 Charging Posture (+35%) • Pack Size (+20%) • Night Visibility (+15%)
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- REAL-TIME WILDLIFE BEHAVIORAL ANALYSIS & EVENT TIMELINE -->
+            <div id="behaviorAnalysisContainer" class="card" style="margin-bottom: var(--space-xl); background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <h3 style="color: var(--color-secondary-light); margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
+                            <span>🧠 Real-Time Wildlife Behavioral Analysis</span>
+                            <span class="badge badge-info" id="behavior-active-count" style="font-size: 0.75rem;">0 TRACKED</span>
+                        </h3>
+                        <p style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin: 4px 0 0 0;">
+                            Multi-frame temporal tracking, looming analysis & trajectory heuristic inference. Non-invasive computer-vision behavioral indicators.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button class="btn btn-outline" style="font-size: 0.75rem; padding: 4px 10px; color: var(--color-secondary-light); border-color: var(--color-secondary-light);" onclick="openBehaviorConfigModal()">
+                            ⚙️ Behavior Config
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-2" style="gap: var(--space-lg);">
+                    <!-- Active Tracked Animals Behavioral Matrix -->
+                    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 8px;">
+                            <h4 style="color: var(--color-text-light); margin: 0; font-size: 0.95rem;">
+                                🐾 Active Tracked Animals
+                            </h4>
+                            <span style="font-size: 0.72rem; color: rgba(255,255,255,0.5);">Real-Time Temporal Classification</span>
+                        </div>
+                        <div id="activeBehaviorCards" style="display: flex; flex-direction: column; gap: 8px; max-height: 290px; overflow-y: auto;">
+                            <div style="color: rgba(255,255,255,0.4); font-size: 0.85rem; text-align: center; padding: 25px 0;">
+                                No active animal tracks detected. Start surveillance stream to begin real-time behavioral tracking.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Real-Time Behavioral Event Timeline Feed -->
+                    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 8px;">
+                            <h4 style="color: var(--color-text-light); margin: 0; font-size: 0.95rem;">
+                                📜 Real-Time Behavioral Event Stream
+                            </h4>
+                            <span style="font-size: 0.72rem; color: rgba(255,255,255,0.5);">Temporal Confirmation Log</span>
+                        </div>
+                        <div id="behaviorEventFeed" style="display: flex; flex-direction: column; gap: 6px; max-height: 290px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.82rem;">
+                            <div style="color: rgba(255,255,255,0.4); font-style: italic; text-align: center; padding: 25px 0;">
+                                Awaiting confirmed behavioral events...
                             </div>
                         </div>
                     </div>
@@ -885,6 +938,59 @@
         </div>
     </div>
 
+    <!-- ========================================================= -->
+    <!-- POPUP 3: Behavior Engine Configuration Modal              -->
+    <!-- ========================================================= -->
+    <div id="behaviorConfigModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1002; display: flex; align-items: center; justify-content: center;">
+        <div style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 2px solid #38bdf8; border-radius: 16px; padding: 28px; max-width: 540px; width: 92%; box-shadow: 0 0 40px rgba(56,189,248,0.3); max-height: 85vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                <h3 style="color: #38bdf8; margin: 0; font-size: 1.25rem;">⚙️ Behavior Engine Configuration</h3>
+                <button onclick="closeBehaviorConfigModal()" style="background: transparent; border: none; color: #fff; font-size: 1.2rem; cursor: pointer;">✕</button>
+            </div>
+            <p style="color: rgba(255,255,255,0.7); font-size: 0.8rem; margin-bottom: 16px;">
+                Fine-tune computer-vision temporal heuristics and thresholds for real-time behavioral classification.
+            </p>
+            <div id="behaviorConfigForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.85rem;">
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Stationary Speed (px/s)</label>
+                    <input type="number" id="cfg_stationary" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Walking Speed (px/s)</label>
+                    <input type="number" id="cfg_walking" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Running Speed (px/s)</label>
+                    <input type="number" id="cfg_running" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Charging Speed (px/s)</label>
+                    <input type="number" id="cfg_charging" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Loitering Duration (s)</label>
+                    <input type="number" id="cfg_loitering_dur" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Resting Duration (s)</label>
+                    <input type="number" id="cfg_resting_dur" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Confirmation Frames</label>
+                    <input type="number" id="cfg_confirm_frames" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+                <div>
+                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Risk Cooldown (s)</label>
+                    <input type="number" id="cfg_risk_cooldown" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button onclick="closeBehaviorConfigModal()" class="btn btn-outline" style="flex: 1;">Cancel</button>
+                <button onclick="saveBehaviorConfig()" class="btn btn-primary" style="flex: 2;">Save Config</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Popup animation + sound bar styles -->
     <style>
         .modal.hidden { display: none !important; }
@@ -897,6 +1003,19 @@
             to   { height: 42px; }
         }
         .sound-bar { height: 8px; }
+        .behavior-event-item {
+            padding: 6px 10px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.03);
+            border-left: 3px solid #4caf50;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .behavior-event-item.risk-critical { border-left-color: #f44336; background: rgba(244,67,54,0.1); }
+        .behavior-event-item.risk-high { border-left-color: #ff9800; background: rgba(255,152,0,0.1); }
+        .behavior-event-item.risk-medium { border-left-color: #ffeb3b; background: rgba(255,235,59,0.08); }
+        .behavior-event-item.risk-low { border-left-color: #4caf50; background: rgba(76,175,80,0.05); }
     </style>
 
     <div style="position: fixed; bottom: 5px; right: 5px; opacity: 0.05; transition: opacity 0.3s; z-index: 9999;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.05">

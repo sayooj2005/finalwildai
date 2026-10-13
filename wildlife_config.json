@@ -13,18 +13,29 @@
     "padding": 60
   },
   "categories": {
-    "HUMAN": ["person", "poacher"],
-    "WILDLIFE": ["tiger", "elephant", "leopard", "deer", "wild boar", "monkey", "bear", "zebra", "giraffe", "cow", "horse", "sheep", "dog", "cat"]
+    "HUMAN": ["person", "poacher", "human"],
+    "WILDLIFE": [
+      "tiger", "elephant", "leopard", "bear", "deer", "wild boar", "boar",
+      "monkey", "zebra", "giraffe", "cow", "horse", "sheep", "dog", "cat", "bird", "lion", "cheetah"
+    ]
   },
   "classes": {
-    "tiger": {"threshold": 0.40, "priority": "critical", "risk_weight": 100},
-    "elephant": {"threshold": 0.50, "priority": "high", "risk_weight": 85},
-    "leopard": {"threshold": 0.40, "priority": "critical", "risk_weight": 95},
-    "bear": {"threshold": 0.45, "priority": "high", "risk_weight": 80},
-    "wild boar": {"threshold": 0.45, "priority": "medium", "risk_weight": 60},
-    "deer": {"threshold": 0.45, "priority": "low", "risk_weight": 20},
-    "monkey": {"threshold": 0.40, "priority": "low", "risk_weight": 30},
+    "tiger": {"threshold": 0.35, "priority": "critical", "risk_weight": 100},
+    "elephant": {"threshold": 0.35, "priority": "high", "risk_weight": 85},
+    "leopard": {"threshold": 0.35, "priority": "critical", "risk_weight": 95},
+    "bear": {"threshold": 0.35, "priority": "high", "risk_weight": 80},
+    "wild boar": {"threshold": 0.40, "priority": "medium", "risk_weight": 60},
+    "boar": {"threshold": 0.40, "priority": "medium", "risk_weight": 60},
+    "deer": {"threshold": 0.40, "priority": "low", "risk_weight": 20},
+    "monkey": {"threshold": 0.35, "priority": "low", "risk_weight": 30},
     "person": {"threshold": 0.35, "priority": "critical", "risk_weight": 100},
-    "default": {"threshold": 0.50, "priority": "low", "risk_weight": 10}
+    "cow": {"threshold": 0.40, "priority": "low", "risk_weight": 25},
+    "horse": {"threshold": 0.40, "priority": "low", "risk_weight": 30},
+    "sheep": {"threshold": 0.40, "priority": "low", "risk_weight": 15},
+    "dog": {"threshold": 0.40, "priority": "low", "risk_weight": 30},
+    "cat": {"threshold": 0.40, "priority": "low", "risk_weight": 20},
+    "bird": {"threshold": 0.40, "priority": "low", "risk_weight": 10},
+    "zebra": {"threshold": 0.40, "priority": "low", "risk_weight": 35},
+    "giraffe": {"threshold": 0.40, "priority": "low", "risk_weight": 35}
   }
 }

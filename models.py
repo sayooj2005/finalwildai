@@ -110,3 +110,18 @@ class SystemSetting(Base):
     key = Column(String, unique=True, index=True)
     value = Column(String)
 
+class BehaviorEvent(Base):
+    __tablename__ = "behavior_events"
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.now)
+    animal = Column(String, index=True)
+    track_id = Column(String, index=True)
+    behavior = Column(String, index=True)
+    confidence = Column(Float, default=0.8)
+    speed = Column(Float, default=0.0)
+    direction = Column(String, default="none")
+    risk_level = Column(String, default="LOW")  # LOW, MEDIUM, HIGH, CRITICAL
+    duration = Column(Float, default=0.0)
+    camera_id = Column(String, default="IP_WEBCAM_01")
+    details = Column(String, nullable=True)
+
