@@ -27,6 +27,7 @@
             <ul class="navbar-menu" id="navMenu">
                 <li><a href="index.html" data-lang="nav-home">Home</a></li>
                 <li><a href="user-portal.html" data-lang="nav-portal">User Portal</a></li>
+                <li><a href="#evacuation">Safe Escape Routes</a></li>
                 <li><a href="#report" data-lang="btn-report">Report Sighting</a></li>
                 <li><a href="login.html" class="btn btn-primary" data-lang="nav-admin">Admin Login</a></li>
                 <li class="lang-switcher">
@@ -58,52 +59,151 @@
         </div>
     </section>
 
-        </div>
-    </section>
-
-    <!-- Safe Evacuation & Escape Route Finder -->
-    <section class="section" id="evacuation" style="background: rgba(15, 23, 42, 0.95); color: white; border-top: 2px solid var(--color-primary); border-bottom: 2px solid var(--color-primary);">
+    <!-- Real-Time GIS Threat & Evacuation Map Section -->
+    <section class="section" id="evacuation" style="background: rgba(15, 23, 42, 0.98); color: white; border-top: 2px solid var(--color-primary); border-bottom: 2px solid var(--color-primary); padding: var(--space-xl) 0;">
         <div class="container">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); flex-wrap: wrap; gap: 1rem;">
                 <div>
-                    <h2 style="color: var(--color-secondary-light); margin: 0;">🧭 Safe Evacuation & Escape Route Finder</h2>
-                    <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem; margin: 4px 0 0 0;">Geospatial route vectoring avoiding active wildlife threat centroids</p>
+                    <h2 style="color: var(--color-secondary-light); margin: 0; font-size: 1.85rem;">🧭 Real-Time GIS Threat & Evacuation Map</h2>
+                    <p style="color: rgba(255,255,255,0.7); font-size: 0.9rem; margin: 4px 0 0 0;">
+                        Live geospatial routing centered on <strong>your actual device location</strong> &mdash; vectoring away from verified wildlife threats.
+                    </p>
                 </div>
-                <button class="btn btn-primary" onclick="refreshEvacuationRoute()">
-                    📍 Calculate Safe Escape Route
-                </button>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-outline" id="btnGisLocateMe" onclick="getUserGisLocation(true)" style="border-color: #3b82f6; color: #60a5fa; background: rgba(59, 130, 246, 0.1);">
+                        🎯 Locate Me
+                    </button>
+                    <button class="btn btn-primary" id="btnGisFindSafeRoute" onclick="calculateRealSafeRoute()">
+                        🚀 Find Safe Route
+                    </button>
+                    <button class="btn btn-outline" id="btnGisManualPin" onclick="toggleManualGisPinMode()" style="border-color: #f59e0b; color: #fbbf24;">
+                        📌 Pin Location on Map
+                    </button>
+                </div>
             </div>
 
-            <div class="grid grid-2" style="gap: var(--space-lg);">
-                <div class="card" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.15);">
-                    <h3 style="color: var(--color-secondary-light); margin-bottom: 10px;">🗺️ Interactive Safety Map</h3>
-                    <div id="user-evacuation-map" class="map-container-box"></div>
+            <!-- GPS & Threat Status Banner -->
+            <div id="gisStatusBanner" style="margin-bottom: var(--space-md); padding: 12px 16px; border-radius: var(--radius-md); background: rgba(30, 41, 59, 0.9); border: 1px solid rgba(255, 255, 255, 0.12); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 0.88rem;">
+                <div id="gisLocationStatus" style="display: flex; align-items: center; gap: 8px;">
+                    <span id="gisGpsIndicator" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #94a3b8;"></span>
+                    <span id="gisLocationText">GPS Status: Waiting for user location permission...</span>
                 </div>
+                <div id="gisAccuracyBadge" style="font-size: 0.8rem; color: rgba(255,255,255,0.6);">
+                    Accuracy: &mdash; | Source: Browser Geolocation API
+                </div>
+            </div>
 
-                <div class="card" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.15); display: flex; flex-direction: column; justify-content: space-between;">
-                    <div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
-                            <h3 style="margin: 0; color: #4caf50;">✅ Recommended Safe Haven</h3>
-                            <span class="badge badge-success" id="user-route-heading">Heading: NORTHEAST</span>
-                        </div>
-
-                        <div style="margin-top: 15px;">
-                            <div style="font-size: 1.25rem; font-weight: 700; color: white;" id="user-safe-haven-name">Community Center Evacuation Hub</div>
-                            <div style="color: rgba(255,255,255,0.7); font-size: 0.9rem; margin-top: 4px;" id="user-safe-haven-distance">Distance: 350 meters • Clearance: 850m from threat</div>
-                        </div>
-
-                        <div style="background: rgba(76, 175, 80, 0.15); border-left: 4px solid #4caf50; padding: 12px; border-radius: 6px; margin-top: 15px;">
-                            <div style="font-weight: 700; color: #81c784; font-size: 0.88rem;">📢 Turn-by-Turn Safe Escape Advice:</div>
-                            <div style="font-size: 0.85rem; color: rgba(255,255,255,0.9); margin-top: 4px;" id="user-route-instruction">
-                                Proceed NORTHEAST along Main Village Path for 350m to Community Center. Stay clear of Western Forest Perimeter.
-                            </div>
+            <!-- Main GIS Grid Layout -->
+            <div class="grid grid-2" style="gap: var(--space-lg); align-items: start;">
+                <!-- Map Column -->
+                <div class="card" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.15); padding: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                        <h3 style="color: var(--color-secondary-light); margin: 0; font-size: 1.15rem;">🗺️ Interactive GIS Escape Routing Map</h3>
+                        <div style="display: flex; gap: 8px;">
+                            <span class="badge" id="gisRouteTypeBadge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">Road Network (OSRM)</span>
                         </div>
                     </div>
 
-                    <div style="display: flex; gap: 10px; margin-top: 20px;">
-                        <a href="emergency-sos.html" class="btn btn-danger w-full" style="text-align: center;">
-                            🆘 Immediate SOS Evacuation Guide
-                        </a>
+                    <!-- Map Container -->
+                    <div id="user-evacuation-map" class="map-container-box" style="height: 480px; width: 100%; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);"></div>
+
+                    <!-- Map Legend -->
+                    <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 0.8rem; color: rgba(255,255,255,0.8); flex-wrap: wrap; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+                        <span style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #3b82f6; border: 2px solid white;"></span>
+                            <strong>Your Location</strong>
+                        </span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #10b981;"></span>
+                            <strong>Safe Haven / Shelter</strong>
+                        </span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></span>
+                            <strong>Wildlife Threat Area</strong>
+                        </span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: #06b6d4;"></span>
+                            <strong>Hospital / First-Aid</strong>
+                        </span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px;">
+                            <span style="display: inline-block; width: 20px; height: 3px; background: #10b981;"></span>
+                            <strong>Safe Evacuation Route</strong>
+                        </span>
+                    </div>
+
+                    <!-- Manual Coordinate Bar -->
+                    <div id="manualCoordBar" style="display: none; margin-top: 12px; background: rgba(15, 23, 42, 0.8); padding: 10px; border-radius: 6px; border: 1px dashed #f59e0b;">
+                        <span style="font-size: 0.82rem; color: #fbbf24;">📌 Click anywhere on the map to set your location manually, or type coordinates:</span>
+                        <div style="display: flex; gap: 8px; margin-top: 6px;">
+                            <input type="text" id="manualLatInput" placeholder="Latitude (e.g. 8.5241)" class="form-input" style="flex: 1; padding: 4px 8px; font-size: 0.85rem;">
+                            <input type="text" id="manualLonInput" placeholder="Longitude (e.g. 76.9366)" class="form-input" style="flex: 1; padding: 4px 8px; font-size: 0.85rem;">
+                            <button type="button" class="btn btn-primary" onclick="applyManualCoordinates()" style="padding: 4px 12px; font-size: 0.85rem;">Apply</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Guidance & Destinations Column -->
+                <div style="display: flex; flex-direction: column; gap: var(--space-md);">
+                    <!-- Active Escape Route Card -->
+                    <div class="card" id="gisRouteCard" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.15);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+                            <h3 style="margin: 0; color: #10b981; font-size: 1.15rem;">✅ Recommended Escape Destination</h3>
+                            <span class="badge badge-success" id="user-route-heading">Heading: NORTHEAST</span>
+                        </div>
+
+                        <div style="margin-top: 12px;">
+                            <div style="font-size: 1.25rem; font-weight: 700; color: white;" id="user-safe-haven-name">Locating nearest safe haven...</div>
+                            <div style="color: rgba(255,255,255,0.7); font-size: 0.9rem; margin-top: 4px;" id="user-safe-haven-distance">
+                                Distance: &mdash; • Estimated Travel Time: &mdash;
+                            </div>
+                        </div>
+
+                        <!-- Turn-by-Turn Instruction Box -->
+                        <div style="background: rgba(16, 185, 129, 0.12); border-left: 4px solid #10b981; padding: 12px; border-radius: 6px; margin-top: 14px;">
+                            <div style="font-weight: 700; color: #6ee7b7; font-size: 0.88rem;">📢 Turn-by-Turn Evacuation Advice:</div>
+                            <div style="font-size: 0.88rem; color: rgba(255,255,255,0.95); margin-top: 4px; line-height: 1.4;" id="user-route-instruction">
+                                Please allow browser GPS permission or click "Locate Me" above to calculate your personalized road evacuation route.
+                            </div>
+                        </div>
+
+                        <!-- Step by step roadmap breakdown container -->
+                        <div id="gisRouteStepsContainer" style="margin-top: 12px; max-height: 160px; overflow-y: auto; font-size: 0.82rem; color: rgba(255,255,255,0.8); display: none;">
+                            <div style="font-weight: 600; color: var(--color-secondary-light); margin-bottom: 4px;">Route Waypoints:</div>
+                            <ol id="gisRouteStepsList" style="margin: 0; padding-left: 20px;"></ol>
+                        </div>
+                    </div>
+
+                    <!-- Nearby Safe Locations Panel -->
+                    <div class="card" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.15);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4 style="margin: 0; color: var(--color-secondary-light); font-size: 1rem;">🏥 Nearby Safe Havens & Emergency Services</h4>
+                            <span class="badge badge-info" id="safeHavenCountBadge">Loading...</span>
+                        </div>
+                        <div id="nearbySafeLocationsList" style="max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+                            <div style="color: rgba(255,255,255,0.5); font-size: 0.85rem; text-align: center; padding: 12px;">Fetching verified safe havens...</div>
+                        </div>
+                    </div>
+
+                    <!-- Wildlife Threats Nearby Panel -->
+                    <div class="card" style="background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(255,255,255,0.15);">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4 style="margin: 0; color: #f87171; font-size: 1rem;">🚨 Wildlife Threats Nearby</h4>
+                            <span class="badge badge-danger" id="threatCountBadge">Loading...</span>
+                        </div>
+                        <div id="nearbyThreatsList" style="max-height: 170px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px;">
+                            <div style="color: rgba(255,255,255,0.5); font-size: 0.85rem; text-align: center; padding: 12px;">Checking verified threat sensors and reports...</div>
+                        </div>
+                    </div>
+
+                    <!-- Regional Emergency Services Contacts -->
+                    <div class="card" style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(255,255,255,0.1);">
+                        <div style="font-weight: 700; color: #fbbf24; font-size: 0.88rem; margin-bottom: 6px;">📞 Verified Regional Emergency Contacts (Kerala / Trivandrum):</div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.8rem; color: rgba(255,255,255,0.85);">
+                            <div>🌲 Forest Flying Squad: <strong>1800-425-4733</strong></div>
+                            <div>👮 Police Control: <strong>112 / 100</strong></div>
+                            <div>🚑 Ambulance Emergency: <strong>108</strong></div>
+                            <div>🏥 Medical College Trivandrum: <strong>0471-2528300</strong></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -124,53 +224,76 @@
     <!-- Wildlife Sighting Report Form -->
     <section class="section" id="report" style="background: var(--color-bg-light);">
         <div class="container">
-            <div style="max-width: 800px; margin: 0 auto;">
-                <h2 class="text-center mb-4" data-lang="report-title">Report Wildlife Sighting</h2>
+            <div style="max-width: 860px; margin: 0 auto;">
+                <h2 class="text-center mb-4" data-lang="report-title">Report Wildlife Sighting & Evidence Verification</h2>
                 <p class="text-center mb-5" style="color: var(--color-text-secondary);" data-lang="report-subtitle">
-                    Help us track wildlife movement by reporting sightings. Your reports are verified using AI to ensure
-                    authenticity.
+                    Submit photographic wildlife evidence. Our system analyzes camera EXIF integrity, Error Level Analysis (ELA) for manipulation, Trivandrum geographical boundary consistency, and YOLO species detection.
                 </p>
 
                 <div class="card">
                     <form id="sightingForm">
-                        <!-- Location -->
+                        <!-- Location Input & Interactive Map Selection -->
                         <div class="form-group">
-                            <label class="form-label" data-lang="location-label">Location</label>
-                            <input type="text" class="form-input" id="location"
-                                data-lang-placeholder="location-placeholder" placeholder="Enter location or use GPS"
-                                required>
-                            <button type="button" class="btn btn-outline mt-2" id="getLocationBtn">
-                                <span data-lang="use-gps">Use My Current Location</span>
-                            </button>
+                            <label class="form-label" data-lang="location-label">Sighting Location</label>
+                            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                <input type="text" class="form-input" id="location" style="flex: 1; min-width: 240px;"
+                                    data-lang-placeholder="location-placeholder" placeholder="Enter location name or pin on map below"
+                                    required>
+                                <button type="button" class="btn btn-outline" id="getLocationBtn" style="white-space: nowrap;">
+                                    📍 <span data-lang="use-gps">Use My Current Location</span>
+                                </button>
+                            </div>
+                            <input type="hidden" id="reportLat">
+                            <input type="hidden" id="reportLon">
+                            
+                            <!-- Interactive Trivandrum Map Picker -->
+                            <div style="margin-top: 10px;">
+                                <div id="report-picker-map" style="height: 220px; border-radius: var(--radius-md); border: 1px solid var(--color-border); z-index: 1;"></div>
+                                <div style="font-size: 0.78rem; color: var(--color-text-secondary); margin-top: 4px;">
+                                    Click anywhere on the map above to set exact coordinates within Thiruvananthapuram (Trivandrum), Kerala.
+                                </div>
+                            </div>
                         </div>
 
                         <!-- Date and Time -->
                         <div class="grid grid-2">
                             <div class="form-group">
-                                <label class="form-label" data-lang="date-label">Date</label>
+                                <label class="form-label" data-lang="date-label">Capture Date</label>
                                 <input type="date" class="form-input" id="sightingDate" required>
                             </div>
                             <div class="form-group">
-                                <label class="form-label" data-lang="time-label">Time</label>
+                                <label class="form-label" data-lang="time-label">Capture Time</label>
                                 <input type="time" class="form-input" id="sightingTime" required>
                             </div>
                         </div>
 
-                        <!-- Species -->
-                        <div class="form-group">
-                            <label class="form-label" data-lang="species-label">Species (if known)</label>
-                            <select class="form-select" id="species">
-                                <option value="" data-lang="select-species">Select species...</option>
-                                <option value="tiger" data-lang="species-tiger">Tiger / കടുവ</option>
-                                <option value="leopard" data-lang="species-leopard">Leopard / പുലി</option>
-                                <option value="elephant" data-lang="species-elephant">Elephant / ആന</option>
-                                <option value="wild-boar" data-lang="species-boar">Wild Boar / കാട്ടുപന്നി</option>
-                                <option value="deer" data-lang="species-deer">Deer / മാൻ</option>
-                                <option value="bear" data-lang="species-bear">Bear / കരടി</option>
-                                <option value="monkey" data-lang="species-monkey">Monkey / കുരങ്ങ്</option>
-                                <option value="snake" data-lang="species-snake">Snake / പാമ്പ്</option>
-                                <option value="other" data-lang="species-other">Other</option>
-                            </select>
+                        <!-- Species & Camera Source -->
+                        <div class="grid grid-2">
+                            <div class="form-group">
+                                <label class="form-label" data-lang="species-label">Suspected Species</label>
+                                <select class="form-select" id="species">
+                                    <option value="" data-lang="select-species">Select species...</option>
+                                    <option value="tiger" data-lang="species-tiger">Tiger / കടുവ</option>
+                                    <option value="leopard" data-lang="species-leopard">Leopard / പുലി</option>
+                                    <option value="elephant" data-lang="species-elephant">Elephant / ആന</option>
+                                    <option value="wild-boar" data-lang="species-boar">Wild Boar / കാട്ടുപന്നി</option>
+                                    <option value="deer" data-lang="species-deer">Deer / മാൻ</option>
+                                    <option value="bear" data-lang="species-bear">Bear / കരടി</option>
+                                    <option value="monkey" data-lang="species-monkey">Monkey / കുരങ്ങ്</option>
+                                    <option value="snake" data-lang="species-snake">Snake / പാമ്പ്</option>
+                                    <option value="other" data-lang="species-other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Evidence Source</label>
+                                <select class="form-select" id="sourceType">
+                                    <option value="mobile camera">Mobile Camera (Smartphone)</option>
+                                    <option value="CCTV/IP camera">CCTV / IP Camera Export</option>
+                                    <option value="trail camera">Trail Camera (Camera Trap)</option>
+                                    <option value="downloaded image">Downloaded / Forwarded Image</option>
+                                    <option value="unknown">Unknown</option>
+                                </select>
+                            </div>
                         </div>
 
                         <!-- Number of Animals -->
@@ -183,52 +306,107 @@
                         <div class="form-group">
                             <label class="form-label" data-lang="behavior-label">Observed Behavior</label>
                             <textarea class="form-textarea" id="behavior" data-lang-placeholder="behavior-placeholder"
-                                placeholder="Describe what the animal(s) were doing..." required></textarea>
+                                placeholder="Describe what the animal(s) were doing..." rows="2" required></textarea>
                         </div>
 
-                        <label class="form-label" data-lang="upload-photo-label">Upload Photo (Required for
-                            verification)</label>
-                        <div class="file-upload">
-                            <input type="file" class="file-upload-input" id="imageUpload" accept="image/*" required>
-                            <label for="imageUpload" class="file-upload-label">
-                                <span
-                                    style="font-size: 1.5rem; color: var(--color-primary); margin-bottom: 0.5rem;">Upload
-                                    File</span>
-                                <div>
+                        <!-- Photo Evidence Upload & Live Camera Capture -->
+                        <div class="form-group">
+                            <label class="form-label" data-lang="upload-photo-label">Photo Evidence (Live Camera Capture or File Upload)</label>
+                            
+                            <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                                <button type="button" class="btn btn-outline" id="btnToggleFile" style="flex: 1; border-color: var(--color-primary); background: rgba(59, 130, 246, 0.1);" onclick="switchUploadMode('file')">
+                                    📁 File Upload / Gallery
+                                </button>
+                                <button type="button" class="btn btn-outline" id="btnToggleCamera" style="flex: 1;" onclick="switchUploadMode('camera')">
+                                    📷 Live Camera Snapshot
+                                </button>
+                            </div>
+
+                            <!-- File Drag & Drop Box -->
+                            <div class="file-upload" id="fileUploadContainer" style="border: 2px dashed var(--color-border); border-radius: var(--radius-md); padding: 20px; text-align: center; cursor: pointer;">
+                                <input type="file" class="file-upload-input" id="imageUpload" accept="image/jpeg,image/png,image/webp" capture="environment" style="display: none;">
+                                <label for="imageUpload" class="file-upload-label" style="cursor: pointer; display: block;">
+                                    <div style="font-size: 2rem; color: var(--color-primary); margin-bottom: 0.5rem;">📷</div>
                                     <div style="font-weight: 600; margin-bottom: 0.25rem;" data-lang="upload-click">
-                                        Click to upload image
+                                        Click to upload or drag & drop wildlife image
                                     </div>
-                                    <div style="font-size: 0.875rem; color: var(--color-text-secondary);"
-                                        data-lang="upload-format">PNG, JPG
-                                        up to 10MB</div>
+                                    <div style="font-size: 0.875rem; color: var(--color-text-secondary);" data-lang="upload-format">
+                                        JPEG, PNG, WebP up to 15MB
+                                    </div>
+                                </label>
+                            </div>
+
+                            <!-- Live Camera Stream Box -->
+                            <div id="liveCameraContainer" style="display: none; background: #0f172a; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 15px; text-align: center;">
+                                <video id="liveCameraVideo" autoplay playsinline style="width: 100%; max-height: 320px; object-fit: contain; border-radius: 6px; background: #000;"></video>
+                                <canvas id="liveCameraCanvas" style="display: none;"></canvas>
+                                <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+                                    <button type="button" class="btn btn-primary" id="btnCapturePhoto" onclick="captureLiveSnapshot()">
+                                        📸 Take Snapshot
+                                    </button>
+                                    <button type="button" class="btn btn-outline" id="btnStopCamera" onclick="stopLiveCamera()">
+                                        ⏹ Stop Camera
+                                    </button>
                                 </div>
-                            </label>
+                            </div>
+
+                            <div id="imagePreview" class="file-preview hidden" style="margin-top: 15px; text-align: center;"></div>
+                            <div id="verificationStatus" class="mt-2"></div>
                         </div>
-                        <div id="imagePreview" class="file-preview hidden"></div>
-                        <div id="verificationStatus" class="mt-2"></div>
-                </div>
 
-                <!-- Additional Notes -->
-                <div class="form-group">
-                    <label class="form-label" data-lang="notes-label">Additional Notes</label>
-                    <textarea class="form-textarea" id="notes" data-lang-placeholder="notes-placeholder"
-                        placeholder="Provide any additional details about the sighting..."></textarea>
-                </div>
+                        <!-- Additional Notes -->
+                        <div class="form-group">
+                            <label class="form-label" data-lang="notes-label">Additional Notes</label>
+                            <textarea class="form-textarea" id="notes" data-lang-placeholder="notes-placeholder"
+                                placeholder="Provide any additional details about the sighting..." rows="2"></textarea>
+                        </div>
 
-                <!-- Contact Information -->
-                <div class="form-group">
-                    <label class="form-label" data-lang="contact-label">Your Contact Number
-                        (Optional)</label>
-                    <input type="tel" class="form-input" id="contact" placeholder="For verification purposes only">
-                </div>
+                        <!-- Contact Information -->
+                        <div class="form-group">
+                            <label class="form-label" data-lang="contact-label">Your Contact Number (Optional & Protected)</label>
+                            <input type="tel" class="form-input" id="contact" placeholder="For authority follow-up only">
+                        </div>
 
-                <!-- Submit Button -->
-                <button type="submit" class="btn btn-primary w-full btn-lg">
-                    <span data-lang="submit-report">Submit Sighting Report</span>
-                </button>
-                </form>
+                        <!-- Submit Button -->
+                        <button type="submit" class="btn btn-primary w-full btn-lg" id="submitReportBtn">
+                            <span data-lang="submit-report">Submit Evidence for Verification</span>
+                        </button>
+                    </form>
+
+                    <!-- Comprehensive Verification Results Banner -->
+                    <div id="evidenceResultCard" style="display: none; margin-top: 25px; border-radius: var(--radius-md); padding: 20px; border-left: 5px solid var(--color-primary); background: #f8fafc; border: 1px solid #e2e8f0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                            <div>
+                                <h3 style="margin: 0; color: #1e293b; font-size: 1.2rem;">Evidence Verification Analysis</h3>
+                                <div id="resSubId" style="font-size: 0.85rem; color: #64748b;">Submission ID: --</div>
+                            </div>
+                            <span id="resOutcomeBadge" style="padding: 4px 12px; border-radius: 4px; font-weight: 700; font-size: 0.85rem;">ACCEPTED FOR REVIEW</span>
+                        </div>
+
+                        <p id="resExplanation" style="margin: 0 0 15px; font-size: 0.95rem; line-height: 1.5; color: #334155;"></p>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                            <div style="background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                <div style="font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700;">Camera / EXIF</div>
+                                <div id="resCameraVal" style="font-weight: 600; color: #0f172a; margin-top: 2px;">--</div>
+                            </div>
+                            <div style="background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                <div style="font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700;">Location Classification</div>
+                                <div id="resLocationVal" style="font-weight: 600; color: #0f172a; margin-top: 2px;">--</div>
+                            </div>
+                            <div style="background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                <div style="font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700;">AI Forensics / ELA</div>
+                                <div id="resForensicsVal" style="font-weight: 600; color: #0f172a; margin-top: 2px;">--</div>
+                            </div>
+                            <div style="background: #fff; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                                <div style="font-size: 0.75rem; text-transform: uppercase; color: #64748b; font-weight: 700;">YOLO Wildlife Detect</div>
+                                <div id="resYoloVal" style="font-weight: 600; color: #0f172a; margin-top: 2px;">--</div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
             </div>
-        </div>
         </div>
     </section>
 
@@ -325,7 +503,7 @@
 
     <!-- SOS Modal -->
     <div id="sosModal" class="hidden"
-        style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.9); z-index: 9999; display: flex; align-items: center; justify-content: center; padding: var(--space-md);">
+        style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.9); z-index: 9999; display: none; align-items: center; justify-content: center; padding: var(--space-md);">
         <div class="card" style="max-width: 600px; width: 100%; background: white;">
             <div style="text-align: center;">
                 <div style="font-size: 5rem; margin-bottom: var(--space-md); animation: pulse 1s infinite;">🆘</div>

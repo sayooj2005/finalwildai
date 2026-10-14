@@ -1520,25 +1520,175 @@ function deactivateEmergencySOS() {
   sosStatus.classList.remove('hidden');
 }
 
+let userReportPickerMap = null;
+let userReportMarker = null;
+let liveCameraMediaStream = null;
+let capturedBlob = null;
+
+function switchUploadMode(mode) {
+  const fileContainer = document.getElementById('fileUploadContainer');
+  const cameraContainer = document.getElementById('liveCameraContainer');
+  const btnFile = document.getElementById('btnToggleFile');
+  const btnCam = document.getElementById('btnToggleCamera');
+
+  if (mode === 'camera') {
+    if (fileContainer) fileContainer.style.display = 'none';
+    if (cameraContainer) cameraContainer.style.display = 'block';
+    if (btnFile) { btnFile.style.background = 'transparent'; btnFile.style.borderColor = 'var(--color-border)'; }
+    if (btnCam) { btnCam.style.background = 'rgba(59, 130, 246, 0.1)'; btnCam.style.borderColor = 'var(--color-primary)'; }
+    startLiveCamera();
+  } else {
+    stopLiveCamera();
+    if (cameraContainer) cameraContainer.style.display = 'none';
+    if (fileContainer) fileContainer.style.display = 'block';
+    if (btnCam) { btnCam.style.background = 'transparent'; btnCam.style.borderColor = 'var(--color-border)'; }
+    if (btnFile) { btnFile.style.background = 'rgba(59, 130, 246, 0.1)'; btnFile.style.borderColor = 'var(--color-primary)'; }
+  }
+}
+
+async function startLiveCamera() {
+  const video = document.getElementById('liveCameraVideo');
+  if (!video) return;
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      liveCameraMediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false
+      });
+      video.srcObject = liveCameraMediaStream;
+      video.play();
+    } catch (err) {
+      console.error("Camera access error:", err);
+      showNotification("Could not access camera: " + err.message, "warning");
+    }
+  } else {
+    showNotification("Webcam / camera API is not supported in this browser.", "warning");
+  }
+}
+
+function stopLiveCamera() {
+  if (liveCameraMediaStream) {
+    liveCameraMediaStream.getTracks().forEach(track => track.stop());
+    liveCameraMediaStream = null;
+  }
+  const video = document.getElementById('liveCameraVideo');
+  if (video) video.srcObject = null;
+}
+
+function captureLiveSnapshot() {
+  const video = document.getElementById('liveCameraVideo');
+  const canvas = document.getElementById('liveCameraCanvas');
+  const preview = document.getElementById('imagePreview');
+  const status = document.getElementById('verificationStatus');
+
+  if (!video || !canvas || !video.videoWidth) {
+    showNotification("Camera feed not ready yet.", "warning");
+    return;
+  }
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  canvas.toBlob(function (blob) {
+    if (!blob) return;
+    capturedBlob = blob;
+    const file = new File([blob], `live_camera_${Date.now()}.jpg`, { type: "image/jpeg" });
+
+    // Store onto file input
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    const fileInput = document.getElementById('imageUpload');
+    if (fileInput) fileInput.files = dataTransfer.files;
+
+    // Show preview
+    if (preview) {
+      preview.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="Captured Snapshot" style="max-width: 100%; max-height: 280px; border-radius: var(--radius-md); object-fit: contain;">`;
+      preview.classList.remove('hidden');
+    }
+
+    if (status) {
+      status.innerHTML = `
+        <div class="alert alert-safe" style="margin-top: 10px;">
+          <div><strong>Live Camera Snapshot Captured!</strong> (${canvas.width}x${canvas.height} px)<br>Ready for deepfake verification and escape route vectoring.</div>
+        </div>
+      `;
+    }
+
+    stopLiveCamera();
+    document.getElementById('liveCameraContainer').style.display = 'none';
+    document.getElementById('fileUploadContainer').style.display = 'block';
+    showNotification("📸 Live camera frame captured successfully!", "safe");
+  }, "image/jpeg", 0.92);
+}
+
+function initReportPickerMap() {
+  const mapEl = document.getElementById('report-picker-map');
+  if (!mapEl || typeof L === 'undefined' || userReportPickerMap) return;
+
+  // Center on Thiruvananthapuram (Trivandrum)
+  userReportPickerMap = L.map('report-picker-map').setView([8.5241, 76.9366], 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '© OpenStreetMap'
+  }).addTo(userReportPickerMap);
+
+  // Draw target surveillance region boundary
+  const trivandrumBounds = [[8.15, 76.65], [8.95, 77.35]];
+  L.rectangle(trivandrumBounds, { color: '#3b82f6', weight: 1.5, fillOpacity: 0.05 }).addTo(userReportPickerMap);
+
+  userReportPickerMap.on('click', function (e) {
+    setReportCoordinates(e.latlng.lat, e.latlng.lng);
+  });
+}
+
+function setReportCoordinates(lat, lon) {
+  if (!userReportPickerMap) return;
+  if (userReportMarker) userReportPickerMap.removeLayer(userReportMarker);
+  userReportMarker = L.marker([lat, lon]).addTo(userReportPickerMap);
+
+  const latInput = document.getElementById('reportLat');
+  const lonInput = document.getElementById('reportLon');
+  const locInput = document.getElementById('location') || document.getElementById('reportLocation');
+
+  if (latInput) latInput.value = lat.toFixed(6);
+  if (lonInput) lonInput.value = lon.toFixed(6);
+  if (locInput && (!locInput.value || locInput.value.startsWith('GPS:') || locInput.value.startsWith('Lat:'))) {
+    locInput.value = `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  }
+}
+
 function getCurrentLocationForReport() {
-  const locationInput = document.getElementById('reportLocation');
+  const locationInput = document.getElementById('location') || document.getElementById('reportLocation');
+  const latInput = document.getElementById('reportLat');
+  const lonInput = document.getElementById('reportLon');
+
   if (!locationInput) return;
 
   if (navigator.geolocation) {
     locationInput.value = '🛰️ Syncing GPS...';
     navigator.geolocation.getCurrentPosition(
       function (position) {
-        const lat = position.coords.latitude.toFixed(6);
-        const lon = position.coords.longitude.toFixed(6);
-        locationInput.value = `Lat: ${lat}, Lon: ${lon}`;
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        if (latInput) latInput.value = lat.toFixed(6);
+        if (lonInput) lonInput.value = lon.toFixed(6);
+        locationInput.value = `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+        if (userReportPickerMap) {
+          userReportPickerMap.setView([lat, lon], 13);
+          setReportCoordinates(lat, lon);
+        }
         showNotification('📍 Location synced to form.', 'info');
       },
-      function () {
-        locationInput.value = 'Forest Border Area, Sector 7';
+      function (err) {
+        locationInput.value = 'Thiruvananthapuram (Trivandrum) District';
+        showNotification('GPS unavailable: Using default regional reference.', 'warning');
       }
     );
   } else {
-    locationInput.value = 'Forest Border Area, Sector 7';
+    locationInput.value = 'Thiruvananthapuram (Trivandrum) District';
   }
 }
 
@@ -1550,89 +1700,167 @@ function handleImageUploadForReport(e) {
   if (file) {
     const reader = new FileReader();
     reader.onload = function (event) {
-      imagePreview.innerHTML = `<img src="${event.target.result}" alt="Preview" style="max-width: 100%; border-radius: var(--radius-md);">`;
+      imagePreview.innerHTML = `<img src="${event.target.result}" alt="Preview" style="max-width: 100%; max-height: 280px; border-radius: var(--radius-md); object-fit: contain;">`;
       imagePreview.classList.remove('hidden');
 
-      // Simulate AI verification
-      verificationStatus.innerHTML = '<div class="loading-spinner" style="margin: var(--space-md) auto;"></div>';
-
-      setTimeout(function () {
-        verificationStatus.innerHTML = `
-          <div class="alert alert-info">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="16" x2="12" y2="12"/>
-              <line x1="12" y1="8" x2="12.01" y2="8"/>
-            </svg>
-            <div><strong>Ready for Submission</strong><br>Authentication logic will run on the server upon submit.</div>
-          </div>
-        `;
-      }, 500);
+      verificationStatus.innerHTML = `
+        <div class="alert alert-info" style="margin-top: 10px;">
+          <div><strong>Evidence Image Loaded:</strong> ${file.name} (${(file.size / 1024).toFixed(1)} KB)<br>Integrity verification, EXIF inspection, Trivandrum location checks, and AI deepfake screening will execute upon submit.</div>
+        </div>
+      `;
     };
     reader.readAsDataURL(file);
   }
 }
 
 async function submitWildlifeSighting() {
-  const formElement = document.getElementById('wildlifeSightingForm');
-  const submitBtn = formElement.querySelector('button[type="submit"]');
-  submitBtn.disabled = true;
-  submitBtn.innerHTML = '<span class="loading-spinner"></span> Submitting...';
+  const formElement = document.getElementById('sightingForm') || document.getElementById('wildlifeSightingForm');
+  if (!formElement) return;
 
-  let lat = "";
-  let lon = "";
-  const locVal = document.getElementById('reportLocation').value;
-  if(locVal.includes("Lat: ")) {
-      const parts = locVal.split(",");
-      lat = parts[0].replace("Lat: ", "").trim();
-      lon = parts[1].replace("Lon: ", "").trim();
+  const submitBtn = document.getElementById('submitReportBtn') || formElement.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="loading-spinner"></span> Analyzing Evidence Integrity...';
   }
-
-  const formData = new FormData();
-  formData.append('location_text', locVal);
-  formData.append('location_lat', lat);
-  formData.append('location_lon', lon);
-  formData.append('date', document.getElementById('sightingDate').value);
-  formData.append('time', document.getElementById('sightingTime').value);
-  formData.append('species', document.getElementById('species').value);
-  formData.append('notes', document.getElementById('notes').value);
-  formData.append('contact', document.getElementById('contact').value);
 
   const imageUpload = document.getElementById('imageUpload');
-  if (imageUpload.files.length > 0) {
-      formData.append('file', imageUpload.files[0]);
-  } else {
-      showNotification('Please upload an image first.', 'warning');
+  if (!imageUpload || !imageUpload.files.length) {
+    showNotification('Please upload a wildlife photo first.', 'warning');
+    if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = 'Submit Report';
-      return;
+      submitBtn.innerHTML = 'Submit Evidence for Verification';
+    }
+    return;
   }
 
-  try {
-      const response = await fetch('/api/upload_report', {
-          method: 'POST',
-          body: formData
-      });
-      const result = await response.json();
+  const file = imageUpload.files[0];
+  const locationInput = document.getElementById('location') || document.getElementById('reportLocation');
+  const locVal = locationInput ? locationInput.value : '';
 
-      let msg = '✅ Report Submitted Successfully!<br>Your wildlife sighting has been recorded.';
-      if(result.is_authentic) {
-          msg += '<br><strong><span style="color:var(--color-safe)">Image Verified as Authentic Camera Photo.</span></strong>';
-      } else {
-          msg += '<br><strong><span style="color:var(--color-danger-high)">Note: Image flagged as potential internet/AI source.</span></strong>';
+  const latInput = document.getElementById('reportLat');
+  const lonInput = document.getElementById('reportLon');
+  let lat = latInput ? latInput.value : '';
+  let lon = lonInput ? lonInput.value : '';
+
+  if (!lat && locVal.includes('GPS: ')) {
+    const parts = locVal.replace('GPS: ', '').split(',');
+    if (parts.length === 2) {
+      lat = parts[0].trim();
+      lon = parts[1].trim();
+    }
+  }
+
+  const speciesVal = document.getElementById('species') ? document.getElementById('species').value : 'unknown';
+  const sourceVal = document.getElementById('sourceType') ? document.getElementById('sourceType').value : 'unknown';
+  const dateVal = document.getElementById('sightingDate') ? document.getElementById('sightingDate').value : '';
+  const timeVal = document.getElementById('sightingTime') ? document.getElementById('sightingTime').value : '';
+  const descVal = (document.getElementById('behavior') ? document.getElementById('behavior').value : '') + 
+                  (document.getElementById('notes') ? ' | Notes: ' + document.getElementById('notes').value : '');
+  const contactVal = document.getElementById('contact') ? document.getElementById('contact').value : '';
+
+  const formData = new FormData();
+  formData.append('image', file);
+  formData.append('suspected_animal', speciesVal || 'unknown');
+  formData.append('capture_location_name', locVal);
+  formData.append('capture_lat', lat);
+  formData.append('capture_lon', lon);
+  formData.append('capture_time', `${dateVal} ${timeVal}`.trim());
+  formData.append('source_type', sourceVal);
+  formData.append('description', descVal);
+  formData.append('contact_details', contactVal);
+
+  try {
+    const response = await fetch('/api/evidence/upload', {
+      method: 'POST',
+      body: formData
+    });
+    const result = await response.json();
+
+    if (result.success) {
+      const outcome = result.decision.outcome;
+      const isVerified = outcome === 'CAMERA/CCTV EVIDENCE — VERIFIED';
+      const isRejected = outcome.includes('NOT AUTHENTIC') || outcome.includes('INVALID FILE');
+      const isUnverified = outcome.includes('MANUAL REVIEW REQUIRED') || outcome.includes('INCOMPLETE');
+
+      let badgeBg = isVerified ? 'rgba(16, 185, 129, 0.2)' : (isRejected ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)');
+      let badgeColor = isVerified ? '#10b981' : (isRejected ? '#ef4444' : '#f59e0b');
+
+      let msg = `<strong>${outcome}</strong><br>`;
+      msg += `<span>${result.decision.explanation}</span>`;
+
+      showNotification(msg, isVerified ? 'safe' : (isRejected ? 'danger' : 'warning'));
+
+      // Populate evidence result card on user-portal.html if present
+      const resCard = document.getElementById('evidenceResultCard');
+      if (resCard) {
+        resCard.style.display = 'block';
+        resCard.style.borderLeftColor = isVerified ? '#10b981' : (isRejected ? '#ef4444' : '#f59e0b');
+
+        document.getElementById('resSubId').innerText = `Submission ID: ${result.submission_id}`;
+        
+        const badge = document.getElementById('resOutcomeBadge');
+        badge.innerText = outcome;
+        badge.style.background = badgeBg;
+        badge.style.color = badgeColor;
+
+        document.getElementById('resExplanation').innerText = result.decision.explanation;
+        document.getElementById('resCameraVal').innerText = result.metadata.camera || 'None embedded';
+        document.getElementById('resLocationVal').innerText = result.location_verification.classification;
+        document.getElementById('resForensicsVal').innerText = result.forensics.verdict;
+
+        const yoloSp = result.wildlife_detection.detected_species;
+        document.getElementById('resYoloVal').innerText = yoloSp ? `${yoloSp.toUpperCase()} (${Math.round(result.wildlife_detection.confidence * 100)}%)` : 'None detected';
+
+        // Check if animal is detected either by YOLO or user
+        const detectedOrReportedAnimal = yoloSp || (speciesVal !== 'unknown' ? speciesVal : null);
+        if (detectedOrReportedAnimal) {
+          const escapeBanner = document.createElement('div');
+          escapeBanner.style.marginTop = '15px';
+          escapeBanner.style.padding = '12px 16px';
+          escapeBanner.style.borderRadius = '6px';
+          escapeBanner.style.background = 'rgba(76, 175, 80, 0.15)';
+          escapeBanner.style.border = '1px solid #4caf50';
+          escapeBanner.style.display = 'flex';
+          escapeBanner.style.justifyContent = 'space-between';
+          escapeBanner.style.alignItems = 'center';
+          escapeBanner.style.flexWrap = 'wrap';
+          escapeBanner.style.gap = '10px';
+          escapeBanner.innerHTML = `
+            <div>
+              <strong style="color: #2e7d32;">🚨 ${detectedOrReportedAnimal.toUpperCase()} Detected!</strong>
+              <div style="font-size: 0.88rem; color: #1b5e20;">Dynamic safe escape route calculated away from threat centroid.</div>
+            </div>
+            <a href="#evacuation" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.88rem; text-decoration: none;" onclick="focusEvacuationRoute('${detectedOrReportedAnimal}')">
+              🧭 View Safe Escape Route &rarr;
+            </a>
+          `;
+          resCard.appendChild(escapeBanner);
+
+          // Automatically vector the escape route map above
+          if (typeof updateGeospatialEvacuationRoute === 'function') {
+            updateGeospatialEvacuationRoute(detectedOrReportedAnimal, currentSectorZone || 'zone1_forest_border', 85);
+          }
+        }
+
+        resCard.scrollIntoView({ behavior: 'smooth' });
       }
 
-      showNotification(msg, 'safe');
-
-      document.getElementById('wildlifeSightingForm').reset();
-      document.getElementById('imagePreview').classList.add('hidden');
-      document.getElementById('verificationStatus').innerHTML = '';
+      formElement.reset();
+      const previewEl = document.getElementById('imagePreview');
+      if (previewEl) previewEl.classList.add('hidden');
+      const statusEl = document.getElementById('verificationStatus');
+      if (statusEl) statusEl.innerHTML = '';
+    } else {
+      showNotification(`Upload Error: ${result.message || result.error}`, 'error');
+    }
   } catch (error) {
-      console.error(error);
-      showNotification('Failed to submit report. Please try again.', 'error');
+    console.error('Submission error:', error);
+    showNotification('Network communication error. Please try again.', 'error');
   } finally {
+    if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.innerHTML = 'Submit Report';
+      submitBtn.innerHTML = 'Submit Evidence for Verification';
+    }
   }
 }
 
@@ -1654,6 +1882,7 @@ function initUserPortal() {
   if (closeSosModal && sosModal) {
     closeSosModal.addEventListener('click', function () {
       sosModal.classList.add('hidden');
+      sosModal.style.display = 'none';
     });
   }
 
@@ -1665,11 +1894,36 @@ function initUserPortal() {
     });
   }
 
-  // Image Upload
+  // Image Upload & Drag-and-Drop
   const imageUpload = document.getElementById('imageUpload');
   if (imageUpload) {
     imageUpload.addEventListener('change', function (e) {
       handleImageUploadForReport(e);
+    });
+  }
+
+  const dropContainer = document.getElementById('fileUploadContainer');
+  if (dropContainer && imageUpload) {
+    dropContainer.addEventListener('dragover', function (e) {
+      e.preventDefault();
+      dropContainer.style.borderColor = 'var(--color-primary)';
+      dropContainer.style.background = 'rgba(46, 125, 50, 0.05)';
+    });
+
+    dropContainer.addEventListener('dragleave', function (e) {
+      e.preventDefault();
+      dropContainer.style.borderColor = 'var(--color-border)';
+      dropContainer.style.background = 'transparent';
+    });
+
+    dropContainer.addEventListener('drop', function (e) {
+      e.preventDefault();
+      dropContainer.style.borderColor = 'var(--color-border)';
+      dropContainer.style.background = 'transparent';
+      if (e.dataTransfer.files.length > 0) {
+        imageUpload.files = e.dataTransfer.files;
+        handleImageUploadForReport({ target: { files: e.dataTransfer.files } });
+      }
     });
   }
 
@@ -1687,6 +1941,9 @@ function initUserPortal() {
 
   // Load recent community reports
   loadRecentReports();
+
+  // Initialize interactive map for sighting location
+  setTimeout(initReportPickerMap, 500);
 }
 
 function activateSOS() {
@@ -1694,6 +1951,7 @@ function activateSOS() {
   const sosLocation = document.getElementById('sosLocation');
 
   sosModal.classList.remove('hidden');
+  sosModal.style.display = 'flex';
 
   // Simulate getting GPS location
   if (navigator.geolocation) {
@@ -2017,10 +2275,35 @@ async function loadReportValidation() {
       const locText = report.location_text || 'GPS Coordinates';
       const locCoords = (report.location_lat && report.location_lon) ? `(${report.location_lat}, ${report.location_lon})` : '';
       
+      let imgSrc = report.image_path ? report.image_path.replace(/\\/g, '/') : 'elephant-forest.jpg';
+      if (!imgSrc.startsWith('/') && !imgSrc.startsWith('http')) {
+        imgSrc = '/' + imgSrc;
+      }
+
+      const vStatus = report.verification_status || (report.is_authentic ? "CAMERA/CCTV EVIDENCE — VERIFIED" : "UNVERIFIED — MANUAL REVIEW REQUIRED");
+      const isAi = vStatus === "AI-GENERATED — NOT AUTHENTIC" || report.suspected_ai;
+      const isManipulated = vStatus === "MANIPULATED — NOT AUTHENTIC";
+      const isVerified = vStatus === "CAMERA/CCTV EVIDENCE — VERIFIED";
+
+      let badgeBg = "#475569";
+      let badgeColor = "#ffffff";
+      if (isAi) {
+        badgeBg = "#dc2626";
+      } else if (isManipulated) {
+        badgeBg = "#ea580c";
+      } else if (isVerified) {
+        badgeBg = "#16a34a";
+      } else {
+        badgeBg = "#d97706";
+      }
+
+      const noteText = report.ai_reason ? `<div style="font-size: 0.75rem; color: #cbd5e1; margin-top: 4px; line-height: 1.2;">${report.ai_reason}</div>` : '';
+
       html += `
-        <div class="card" style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
+        <div class="card" style="background: var(--color-surface-dark); border: 1px solid ${isAi ? '#dc2626' : (isManipulated ? '#ea580c' : 'var(--color-border-dark)')}; position: relative;">
+          ${isAi ? '<div style="position: absolute; top: 10px; right: 10px; background: #dc2626; color: white; font-weight: 700; font-size: 0.70rem; padding: 3px 8px; border-radius: 4px;">AI-GENERATED</div>' : ''}
           <div style="text-align: center; margin-bottom: var(--space-md);">
-             <img src="${report.image_path ? report.image_path : 'placeholder.jpg'}" style="width: 100%; height: 150px; object-fit: cover; border-radius: 8px;">
+             <img src="${imgSrc}" onerror="this.onerror=null; this.src='/elephant-forest.jpg';" style="width: 100%; height: 160px; object-fit: cover; border-radius: 8px;">
           </div>
           <h4 style="color: var(--color-text-light); text-align: center; margin-bottom: var(--space-sm);">${report.species.toUpperCase()}</h4>
           <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; text-align: center;">
@@ -2029,14 +2312,14 @@ async function loadReportValidation() {
             <span style="font-size: 0.70rem; opacity: 0.5;">${locCoords}</span><br>
             🕒 Time: ${report.date} ${report.time}
           </p>
-          <div style="margin-top: var(--space-md);">
-            ${report.is_authentic
-              ? '<div class="badge badge-success w-full" style="justify-content: center;">✓ Image Authentic</div>'
-              : '<div class="badge badge-danger w-full" style="justify-content: center;">⚠️ AI / Internet Image</div>'
-            }
+          <div style="margin-top: var(--space-md); text-align: center;">
+            <div class="badge w-full" style="justify-content: center; background: ${badgeBg}; color: ${badgeColor}; font-weight: 700; padding: 6px 10px; border-radius: 6px; font-size: 0.78rem;">
+              ${vStatus}
+            </div>
+            ${noteText}
           </div>
           <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-md);">
-            <button class="btn btn-${report.is_authentic ? 'primary' : 'outline'} w-full" onclick="validateReport(${report.id}, true)">
+            <button class="btn btn-primary w-full" style="background: #2e7d32; border-color: #2e7d32;" onclick="validateReport(${report.id}, true)">
               ✓ Approve
             </button>
             <button class="btn btn-outline w-full" style="color: var(--color-danger-high); border-color: var(--color-danger-high);" onclick="validateReport(${report.id}, false)">
@@ -2098,16 +2381,21 @@ async function loadReportHistory() {
 
     let html = '';
     for (const report of reports) {
+      let imgSrc = report.image_path ? report.image_path.replace(/\\/g, '/') : 'elephant-forest.jpg';
+      if (!imgSrc.startsWith('/') && !imgSrc.startsWith('http')) {
+        imgSrc = '/' + imgSrc;
+      }
+
       html += `
-        <div class="card" style="background: rgba(45, 80, 22, 0.1); border: 1px solid var(--color-primary-dark);">
+        <div class="card" style="background: rgba(45, 80, 22, 0.15); border: 1px solid var(--color-primary-dark); margin-bottom: 10px;">
           <div style="display: flex; gap: var(--space-md); align-items: center;">
-            <img src="${report.image_path ? report.image_path : 'placeholder.jpg'}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px;">
+            <img src="${imgSrc}" onerror="this.onerror=null; this.src='/elephant-forest.jpg';" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
             <div style="flex: 1;">
-              <div style="font-weight: 600; color: var(--color-text-light);">${report.species.toUpperCase()}</div>
-              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.5);">📍 ${report.location_text || 'GPS Match'}</div>
-              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.5);">🕐 ${report.date} ${report.time}</div>
+              <div style="font-weight: 700; color: var(--color-text-light); font-size: 1.05rem;">${report.species.toUpperCase()}</div>
+              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.7); margin-top: 2px;">📍 ${report.location_text || 'GPS Location Match'}</div>
+              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.5); margin-top: 2px;">🕐 ${report.date} ${report.time}</div>
             </div>
-            <span class="badge badge-success">VERIFIED</span>
+            <span class="badge badge-success" style="background: #2e7d32; color: #ffffff; font-weight: 700; padding: 6px 14px; border-radius: 6px;">VERIFIED</span>
           </div>
         </div>
       `;
@@ -2398,11 +2686,25 @@ function updatePoseTelemetryUI(data) {
 // ===================================
 // Leaflet.js Geospatial & Evacuation System
 // ===================================
+// Real-Time GIS Threat & Evacuation Map Implementation
+// ===================================
 let adminMap = null;
 let userMap = null;
 let threatMarkerAdmin = null;
 let safeHavenMarkerAdmin = null;
 let evacuationPolyline = null;
+
+// User Portal GIS State (Independent of camera / sensor coordinates)
+let currentUserGisLat = null;
+let currentUserGisLon = null;
+let currentUserGisAccuracy = null;
+let userGisMarker = null;
+let userGisRoutePolyline = null;
+let userGisThreatMarkers = [];
+let userGisHavenMarkers = [];
+let isManualPinActive = false;
+let userGisDestinations = [];
+let userGisActiveThreats = [];
 
 function initGeospatialMaps() {
     const adminMapEl = document.getElementById('admin-geospatial-map');
@@ -2416,7 +2718,7 @@ function initGeospatialMaps() {
     const defaultCoords = [8.7599, 77.1169]; // Ponmudi Upper Sanatorium
     const safeHavenCoords = [8.7580, 77.1175]; // KTDC Golden Peak Refuge / Police Station
 
-    // Admin GIS Map
+    // 1. Admin GIS Map (Preserved for Forest Command Center)
     if (adminMapEl && !adminMap) {
         adminMap = L.map('admin-geospatial-map').setView(defaultCoords, 14);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -2424,12 +2726,10 @@ function initGeospatialMaps() {
             attribution: '© OpenStreetMap contributors'
         }).addTo(adminMap);
 
-        // Threat Marker (Red)
         threatMarkerAdmin = L.marker(defaultCoords).addTo(adminMap)
             .bindPopup('<b>🚨 Active Threat Centroid</b><br>Species: Elephant Herd<br>Risk: 85%')
             .openPopup();
 
-        // Safe Haven Marker (Green)
         safeHavenMarkerAdmin = L.marker(safeHavenCoords, {
             icon: L.icon({
                 iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
@@ -2441,189 +2741,520 @@ function initGeospatialMaps() {
             })
         }).addTo(adminMap).bindPopup('<b>🟢 Primary Community Evacuation Center</b><br>Cap: 250 Persons');
 
-        // Draw Evacuation Route Line (Green dashed line)
-        evacuationPolyline = L.polyline([defaultCoords, [10.8540, 76.2750], safeHavenCoords], {
+        evacuationPolyline = L.polyline([defaultCoords, safeHavenCoords], {
             color: '#00e676',
             weight: 6,
             opacity: 0.9,
             dashArray: '8, 12'
         }).addTo(adminMap);
+
+        updateGeospatialEvacuationRoute('Elephant Herd', currentSectorZone || 'zone1_forest_border', 85);
     }
 
-    // User Portal Evacuation Map
+    // 2. User Portal GIS Threat & Evacuation Map (Centered on User GPS)
     if (userMapEl && !userMap) {
-        userMap = L.map('user-evacuation-map').setView([8.7590, 77.1170], 15);
+        // Default initial regional view (Thiruvananthapuram)
+        userMap = L.map('user-evacuation-map').setView([8.5241, 76.9366], 12);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 18,
-            attribution: '© OpenStreetMap'
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors | WildAI GIS Engine'
         }).addTo(userMap);
 
-        L.marker(defaultCoords).addTo(userMap).bindPopup('<b>⚠️ Active Threat Zone</b>');
-        L.marker(safeHavenCoords, {
-            icon: L.icon({
-                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
-                iconSize: [25, 41]
-            })
-        }).addTo(userMap).bindPopup('<b>🟢 Safe Evacuation Shelter</b>');
+        // Map Click Handler for Manual Pin Mode
+        userMap.on('click', function(e) {
+            if (isManualPinActive) {
+                setUserManualLocation(e.latlng.lat, e.latlng.lng, 'Manually selected on map');
+            }
+        });
 
-        L.polyline([defaultCoords, [10.8540, 76.2750], safeHavenCoords], {
-            color: '#2196f3',
-            weight: 5
-        }).addTo(userMap);
+        // Load verified safe havens and active threats onto the map
+        loadGisThreatsAndDestinations();
+
+        // Automatically prompt for device GPS location
+        getUserGisLocation(false);
     }
-
-    // Immediately trigger evacuation route display for default state
-    updateGeospatialEvacuationRoute('Elephant Herd', currentSectorZone || 'zone1_forest_border', 85);
 }
 
-function updateGeospatialEvacuationRoute(species = 'Elephant', sectorZone = 'zone1_forest_border', riskScore = 85) {
-    if (typeof L === 'undefined') return;
+// Browser Geolocation API (User Device Location)
+function getUserGisLocation(promptFeedback = true) {
+    const statusText = document.getElementById('gisLocationText');
+    const indicator = document.getElementById('gisGpsIndicator');
+    const accuracyBadge = document.getElementById('gisAccuracyBadge');
 
-    // Sector mapping for active threat location & safe evacuation waypoints (Ponmudi & Trivandrum)
-    const sectorGeoMap = {
-        'zone1_forest_border': {
-            threat: [8.7599, 77.1169], // Ponmudi Upper Sanatorium
-            safe: [8.7580, 77.1175], // KTDC Golden Peak Refuge
-            waypoints: [[8.7599, 77.1169], [8.7580, 77.1175]],
-            heading: 'SOUTH',
-            instruction: 'Move SOUTH toward KTDC Golden Peak Police Station.'
-        },
-        'zone2_village_buffer': {
-            threat: [8.7500, 77.1150], // Golden Valley River
-            safe: [8.7180, 77.1050], // Kallar Forest Base
-            waypoints: [[8.7500, 77.1150], [8.7180, 77.1050]],
-            heading: 'SOUTH-WEST',
-            instruction: 'Move SOUTH-WEST down the ghat road towards Kallar Base Camp.'
-        },
-        'zone3_waterhole': {
-            threat: [8.7186, 77.1066], // Kallar Checkpost area
-            safe: [8.6754, 77.0901], // Vithura Community Hall
-            waypoints: [[8.7186, 77.1066], [8.6754, 77.0901]],
-            heading: 'SOUTH-WEST',
-            instruction: 'Move SOUTH-WEST toward Vithura Community Shelter.'
-        },
-        'zone4_agri_sector': {
-            threat: [8.6231, 77.1353], // Peppara Wildlife Border
-            safe: [8.6250, 77.1360], // Peppara Dam Guard Station
-            waypoints: [[8.6231, 77.1353], [8.6250, 77.1360]],
-            heading: 'NORTH-EAST',
-            instruction: 'Move NORTH-EAST to Peppara Dam Guard Station.'
-        },
-        'live': {
-            threat: [8.7599, 77.1169],
-            safe: [8.7580, 77.1175],
-            waypoints: [[8.7599, 77.1169], [8.7580, 77.1175]],
-            heading: 'SOUTH',
-            instruction: 'Move SOUTH toward KTDC Golden Peak Refuge.'
-        }
+    if (indicator) indicator.style.background = '#f59e0b';
+    if (statusText) statusText.textContent = 'GPS Status: Requesting browser location permission...';
+    if (promptFeedback) showNotification('🛰️ Requesting device GPS coordinates...', 'info');
+
+    if (!navigator.geolocation) {
+        if (indicator) indicator.style.background = '#ef4444';
+        if (statusText) statusText.textContent = 'GPS Error: Geolocation is not supported by your browser.';
+        showNotification('Geolocation is unsupported. Please enter coordinates or pin location manually.', 'warning');
+        enableManualGisPinMode(true);
+        return;
+    }
+
+    const options = {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 15000
     };
 
-    const config = sectorGeoMap[sectorZone] || sectorGeoMap['zone1_forest_border'];
-    const specUpper = (species || 'Wildlife').toUpperCase();
+    navigator.geolocation.getCurrentPosition(
+        function (pos) {
+            currentUserGisLat = pos.coords.latitude;
+            currentUserGisLon = pos.coords.longitude;
+            currentUserGisAccuracy = Math.round(pos.coords.accuracy);
 
-    // Update Admin GIS Map
-    if (adminMap) {
-        if (threatMarkerAdmin) {
-            threatMarkerAdmin.setLatLng(config.threat);
-            threatMarkerAdmin.bindPopup(`<b>🚨 ACTIVE THREAT: ${specUpper}</b><br>Sector: ${sectorZone.replace(/_/g, ' ').toUpperCase()}<br>Threat Risk: ${riskScore}%<br><span style="color:#00e676;"><b>🟢 Evacuation Route Engaged</b></span>`).openPopup();
-        }
+            if (indicator) indicator.style.background = '#10b981';
+            if (statusText) {
+                statusText.innerHTML = `<strong>GPS Locked:</strong> ${currentUserGisLat.toFixed(5)}, ${currentUserGisLon.toFixed(5)} (±${currentUserGisAccuracy}m)`;
+            }
+            if (accuracyBadge) {
+                accuracyBadge.textContent = `Accuracy: ±${currentUserGisAccuracy}m | Browser GPS Validated`;
+            }
 
-        if (typeof safeHavenMarkerAdmin !== 'undefined' && safeHavenMarkerAdmin) {
-            safeHavenMarkerAdmin.setLatLng(config.safe);
-        }
+            renderUserLocationMarker(currentUserGisLat, currentUserGisLon, `Your Current Location (±${currentUserGisAccuracy}m accuracy)`);
+            if (promptFeedback) showNotification(`📍 Device location locked (±${currentUserGisAccuracy}m)`, 'safe');
 
-        if (!evacuationPolyline) {
-            evacuationPolyline = L.polyline([config.threat, config.safe], {
-                color: '#00e676',
-                weight: 6,
-                opacity: 0.9,
-                dashArray: '8, 12'
-            }).addTo(adminMap);
-        }
+            // Calculate road route from actual user position
+            calculateRealSafeRoute();
+        },
+        function (err) {
+            console.warn('Geolocation access failed:', err.message);
+            if (indicator) indicator.style.background = '#ef4444';
+            
+            let errMsg = 'Location permission denied.';
+            if (err.code === 2) errMsg = 'Position unavailable.';
+            else if (err.code === 3) errMsg = 'Location request timed out.';
 
-        // Fetch real road routing using OSRM (Open Source Routing Machine) API
-        fetch(`https://router.project-osrm.org/route/v1/driving/${config.threat[1]},${config.threat[0]};${config.safe[1]},${config.safe[0]}?overview=full&geometries=geojson`)
-            .then(res => res.json())
-            .then(data => {
-                let coords = [config.threat, config.safe]; // fallback
-                if (data.routes && data.routes.length > 0) {
-                    // GeoJSON returns [lon, lat], Leaflet needs [lat, lon]
-                    coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-                    
-                    // CRITICAL FIX: Ensure the route line connects exactly to the marker pins
-                    // (OSRM snaps to nearest road, which leaves a visual gap if markers are in the forest)
-                    coords.unshift(config.threat); 
-                    coords.push(config.safe);
-                }
-                
-                evacuationPolyline.setLatLngs(coords);
-                adminMap.fitBounds(L.latLngBounds(coords), { padding: [50, 50], maxZoom: 15 });
-                
-                if (typeof userMap !== 'undefined' && userMap) {
-                    // Also update the public user map with exact routing
-                    L.polyline(coords, { color: '#2196f3', weight: 5 }).addTo(userMap);
-                    userMap.fitBounds(L.latLngBounds(coords), { padding: [30, 30] });
-                }
-            })
-            .catch(err => {
-                console.error("OSRM Routing Error, falling back to straight line:", err);
-                evacuationPolyline.setLatLngs([config.threat, config.safe]);
-                adminMap.fitBounds(L.latLngBounds([config.threat, config.safe]), { padding: [50, 50] });
-            });
+            if (statusText) {
+                statusText.innerHTML = `<span style="color:#f87171;">⚠️ ${errMsg}</span> Use "Pin Location on Map" below.`;
+            }
+            if (accuracyBadge) {
+                accuracyBadge.textContent = 'Accuracy: Unavailable | Manual Mode Ready';
+            }
+
+            showNotification(`${errMsg} You can pin your location manually on the map.`, 'warning');
+            enableManualGisPinMode(true);
+
+            // Center on Thiruvananthapuram as fallback reference
+            if (userMap && !currentUserGisLat) {
+                userMap.setView([8.5241, 76.9366], 12);
+            }
+        },
+        options
+    );
+}
+
+function renderUserLocationMarker(lat, lon, label = 'Your Location') {
+    if (!userMap || typeof L === 'undefined') return;
+
+    if (userGisMarker) {
+        userGisMarker.setLatLng([lat, lon]);
+    } else {
+        const userIcon = L.divIcon({
+            className: 'user-gis-pin',
+            html: `<div style="background: #3b82f6; width: 22px; height: 22px; border-radius: 50%; border: 3px solid #ffffff; box-shadow: 0 0 12px rgba(59,130,246,0.9); animation: pulse 2s infinite;"></div>`,
+            iconSize: [22, 22],
+            iconAnchor: [11, 11]
+        });
+
+        userGisMarker = L.marker([lat, lon], { icon: userIcon, zIndexOffset: 1000 }).addTo(userMap);
     }
 
-    // Update UI Cards
-    const mapSectorTag = document.getElementById('map-sector-tag');
-    const headingBadge = document.getElementById('evac-heading-badge');
-    const instructionText = document.getElementById('evac-instruction-text');
+    userGisMarker.bindPopup(`<b>📍 ${label}</b><br><small>Coordinates: ${lat.toFixed(5)}, ${lon.toFixed(5)}</small>`).openPopup();
+    userMap.setView([lat, lon], 14);
+}
 
-    if (mapSectorTag) mapSectorTag.textContent = sectorZone.replace(/_/g, ' ').toUpperCase();
-    if (headingBadge) headingBadge.textContent = `HEADING: ${config.heading.split(' ')[0]}`;
-    if (instructionText) {
-        instructionText.innerHTML = `📍 <strong>Automatic Escape Route for ${specUpper}:</strong> ${config.instruction}`;
+function toggleManualGisPinMode() {
+    isManualPinActive = !isManualPinActive;
+    enableManualGisPinMode(isManualPinActive);
+}
+
+function enableManualGisPinMode(active) {
+    isManualPinActive = active;
+    const bar = document.getElementById('manualCoordBar');
+    const btn = document.getElementById('btnGisManualPin');
+    if (bar) bar.style.display = active ? 'block' : 'none';
+    if (btn) {
+        btn.style.background = active ? 'rgba(245, 158, 11, 0.2)' : 'transparent';
+        btn.textContent = active ? '⏹ Done Pinning' : '📌 Pin Location on Map';
+    }
+    if (active) {
+        showNotification('📌 Click anywhere on the map to set your location.', 'info');
+    }
+}
+
+function setUserManualLocation(lat, lon, label = 'Manual Location') {
+    currentUserGisLat = parseFloat(lat);
+    currentUserGisLon = parseFloat(lon);
+    currentUserGisAccuracy = 15;
+
+    const latIn = document.getElementById('manualLatInput');
+    const lonIn = document.getElementById('manualLonInput');
+    if (latIn) latIn.value = lat.toFixed(5);
+    if (lonIn) lonIn.value = lon.toFixed(5);
+
+    const statusText = document.getElementById('gisLocationText');
+    const indicator = document.getElementById('gisGpsIndicator');
+    const accuracyBadge = document.getElementById('gisAccuracyBadge');
+
+    if (indicator) indicator.style.background = '#3b82f6';
+    if (statusText) statusText.innerHTML = `<strong>Selected Position:</strong> ${lat.toFixed(5)}, ${lon.toFixed(5)} (${label})`;
+    if (accuracyBadge) accuracyBadge.textContent = 'Accuracy: Manual Pin • User Selected';
+
+    renderUserLocationMarker(currentUserGisLat, currentUserGisLon, label);
+    showNotification('📍 Position set. Recalculating road escape routes...', 'safe');
+    calculateRealSafeRoute();
+}
+
+function applyManualCoordinates() {
+    const latIn = document.getElementById('manualLatInput');
+    const lonIn = document.getElementById('manualLonInput');
+    if (!latIn || !lonIn) return;
+
+    const lat = parseFloat(latIn.value);
+    const lon = parseFloat(lonIn.value);
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        showNotification('Please enter valid numeric latitude and longitude coordinates.', 'error');
+        return;
+    }
+    setUserManualLocation(lat, lon, 'Manually Entered Coordinates');
+}
+
+// Fetch verified safe havens and active threats
+async function loadGisThreatsAndDestinations() {
+    try {
+        // 1. Fetch safe havens
+        const havenRes = await fetch('/api/safe_havens');
+        if (havenRes.ok) {
+            const data = await havenRes.json();
+            userGisDestinations = data.safe_havens || [];
+            renderSafeHavenMarkers(userGisDestinations);
+            populateNearbySafeLocationsList(userGisDestinations);
+        }
+
+        // 2. Fetch active wildlife threats
+        const threatRes = await fetch('/api/threats/active');
+        if (threatRes.ok) {
+            const tData = await threatRes.json();
+            userGisActiveThreats = tData.active_threats || [];
+            renderThreatMarkers(userGisActiveThreats);
+            populateNearbyThreatsList(userGisActiveThreats);
+        }
+    } catch (e) {
+        console.error('Failed to load GIS data:', e);
+    }
+}
+
+function renderSafeHavenMarkers(havens) {
+    if (!userMap || typeof L === 'undefined') return;
+
+    // Clear previous
+    userGisHavenMarkers.forEach(m => userMap.removeLayer(m));
+    userGisHavenMarkers = [];
+
+    havens.forEach(h => {
+        const isHospital = h.type === 'hospital';
+        const isEmergency = h.type === 'emergency_service';
+        const color = isHospital ? '#06b6d4' : (isEmergency ? '#8b5cf6' : '#10b981');
+        const iconSymbol = isHospital ? '🏥' : (isEmergency ? '🚔' : '🟢');
+
+        const havenIcon = L.divIcon({
+            className: 'haven-gis-marker',
+            html: `<div style="background: ${color}; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; border: 2px solid white; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">${iconSymbol}</div>`,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14]
+        });
+
+        const m = L.marker([h.lat, h.lon], { icon: havenIcon }).addTo(userMap);
+        m.bindPopup(`
+            <b>${iconSymbol} ${h.name}</b><br>
+            <span class="badge badge-safe" style="font-size: 0.75rem;">${(h.type || 'shelter').toUpperCase()}</span><br>
+            Capacity: ${h.capacity || 'N/A'} Persons<br>
+            Contact: <a href="tel:${h.contact}">${h.contact || '100'}</a><br>
+            <button class="btn btn-outline" style="padding: 2px 8px; font-size: 0.75rem; margin-top: 6px;" onclick="routeToSpecificDestination(${h.lat}, ${h.lon}, '${h.name.replace(/'/g, "\\'")}')">
+                Route Here
+            </button>
+        `);
+        userGisHavenMarkers.push(m);
+    });
+
+    const countBadge = document.getElementById('safeHavenCountBadge');
+    if (countBadge) countBadge.textContent = `${havens.length} Verified Facilities`;
+}
+
+function renderThreatMarkers(threats) {
+    if (!userMap || typeof L === 'undefined') return;
+
+    userGisThreatMarkers.forEach(m => userMap.removeLayer(m));
+    userGisThreatMarkers = [];
+
+    threats.forEach(t => {
+        if (!t.lat || !t.lon) return;
+
+        const threatIcon = L.divIcon({
+            className: 'threat-gis-marker',
+            html: `<div style="background: #ef4444; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; border: 2px solid #ffffff; box-shadow: 0 0 10px rgba(239,68,68,0.8);">⚠️</div>`,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+        });
+
+        const m = L.marker([t.lat, t.lon], { icon: threatIcon }).addTo(userMap);
+        m.bindPopup(`
+            <b>🚨 Active Threat: ${t.species}</b><br>
+            Location: ${t.location_name}<br>
+            Status: ${t.is_verified ? '<span style="color:#10b981;">✓ Confirmed Surveillance</span>' : '<span style="color:#f59e0b;">Citizen Report</span>'}<br>
+            Coordinates: ${t.lat.toFixed(4)}, ${t.lon.toFixed(4)}<br>
+            Reported: ${t.timestamp}
+        `);
+
+        // Draw danger clearance perimeter (400m radius)
+        L.circle([t.lat, t.lon], {
+            radius: 400,
+            color: '#ef4444',
+            weight: 1,
+            fillColor: '#ef4444',
+            fillOpacity: 0.12
+        }).addTo(userMap);
+
+        userGisThreatMarkers.push(m);
+    });
+
+    const tBadge = document.getElementById('threatCountBadge');
+    if (tBadge) tBadge.textContent = `${threats.length} Active Zones`;
+}
+
+function populateNearbySafeLocationsList(havens) {
+    const list = document.getElementById('nearbySafeLocationsList');
+    if (!list) return;
+
+    if (havens.length === 0) {
+        list.innerHTML = `<div style="color: rgba(255,255,255,0.5); font-size: 0.85rem; padding: 8px;">No facilities retrieved.</div>`;
+        return;
     }
 
-    // User Portal DOM elements
+    list.innerHTML = havens.map(h => {
+        const icon = h.type === 'hospital' ? '🏥' : (h.type === 'emergency_service' ? '🚔' : '🟢');
+        const distStr = h.distance_km ? `${h.distance_km} km` : 'Calculating distance...';
+        return `
+            <div style="background: rgba(15, 23, 42, 0.6); padding: 8px 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.06);">
+                <div>
+                    <div style="font-weight: 600; font-size: 0.88rem; color: white;">${icon} ${h.name}</div>
+                    <div style="font-size: 0.78rem; color: rgba(255,255,255,0.6);">Contact: ${h.contact || '100'} • Distance: ${distStr}</div>
+                </div>
+                <button class="btn btn-outline" style="padding: 4px 10px; font-size: 0.78rem;" onclick="routeToSpecificDestination(${h.lat}, ${h.lon}, '${h.name.replace(/'/g, "\\'")}')">
+                    Route
+                </button>
+            </div>
+        `;
+    }).join('');
+}
+
+function populateNearbyThreatsList(threats) {
+    const list = document.getElementById('nearbyThreatsList');
+    if (!list) return;
+
+    if (threats.length === 0) {
+        list.innerHTML = `<div style="color: #10b981; font-size: 0.85rem; padding: 8px;">✓ No active wildlife threats recorded in surveillance range.</div>`;
+        return;
+    }
+
+    list.innerHTML = threats.map(t => `
+        <div style="background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-weight: 600; font-size: 0.88rem; color: #fca5a5;">⚠️ ${t.species}</div>
+                <div style="font-size: 0.78rem; color: rgba(255,255,255,0.7);">${t.location_name} • ${t.is_verified ? 'Verified Sensor' : 'Citizen Submission'}</div>
+            </div>
+            <button class="btn btn-outline" style="padding: 2px 8px; font-size: 0.75rem; border-color: #ef4444; color: #fca5a5;" onclick="userMap.setView([${t.lat}, ${t.lon}], 14)">
+                Locate
+            </button>
+        </div>
+    `).join('');
+}
+
+// Calculate road-based safe escape route using OSRM
+async function calculateRealSafeRoute() {
+    if (!currentUserGisLat || !currentUserGisLon) {
+        getUserGisLocation(true);
+        return;
+    }
+
+    showNotification('🧭 Vectoring safe road route away from active threats...', 'info');
+
+    // Nearest threat coordinate for avoidance check
+    let nearestThreat = null;
+    let minThreatDist = Infinity;
+    userGisActiveThreats.forEach(t => {
+        if (t.lat && t.lon) {
+            const d = Math.hypot(t.lat - currentUserGisLat, t.lon - currentUserGisLon);
+            if (d < minThreatDist) {
+                minThreatDist = d;
+                nearestThreat = t;
+            }
+        }
+    });
+
+    try {
+        const payload = {
+            user_lat: currentUserGisLat,
+            user_lon: currentUserGisLon,
+            threat_lat: nearestThreat ? nearestThreat.lat : null,
+            threat_lon: nearestThreat ? nearestThreat.lon : null,
+            threat_species: nearestThreat ? nearestThreat.species : 'Wildlife Threat'
+        };
+
+        const res = await fetch('/api/evacuation_routes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const recRoute = data.recommended_route;
+
+            if (recRoute) {
+                await drawRoadRouteOnMap(
+                    currentUserGisLat, currentUserGisLon,
+                    recRoute.lat, recRoute.lon,
+                    recRoute.haven_name,
+                    recRoute.recommended_heading,
+                    recRoute.instruction
+                );
+            }
+        } else {
+            fallbackLocalRouting();
+        }
+    } catch (err) {
+        console.warn('Backend routing failed, using direct OSRM routing:', err);
+        fallbackLocalRouting();
+    }
+}
+
+function fallbackLocalRouting() {
+    if (!currentUserGisLat || !currentUserGisLon || userGisDestinations.length === 0) return;
+    const dest = userGisDestinations[0];
+    drawRoadRouteOnMap(
+        currentUserGisLat, currentUserGisLon,
+        dest.lat, dest.lon,
+        dest.name,
+        'NORTHEAST',
+        `Follow road path towards ${dest.name}.`
+    );
+}
+
+function routeToSpecificDestination(destLat, destLon, destName) {
+    if (!currentUserGisLat || !currentUserGisLon) {
+        showNotification('Please permit your location first or pin a location on the map.', 'warning');
+        getUserGisLocation(true);
+        return;
+    }
+
+    drawRoadRouteOnMap(
+        currentUserGisLat, currentUserGisLon,
+        destLat, destLon,
+        destName,
+        'RECOMMENDED',
+        `Proceed directly along verified road network to ${destName}.`
+    );
+}
+
+async function drawRoadRouteOnMap(startLat, startLon, endLat, endLon, destName, heading, advice) {
+    if (!userMap || typeof L === 'undefined') return;
+
     const nameEl = document.getElementById('user-safe-haven-name');
     const distEl = document.getElementById('user-safe-haven-distance');
     const instEl = document.getElementById('user-route-instruction');
     const headingEl = document.getElementById('user-route-heading');
+    const stepsCont = document.getElementById('gisRouteStepsContainer');
+    const stepsList = document.getElementById('gisRouteStepsList');
 
-    if (nameEl) nameEl.textContent = 'Community Center Evacuation Hub';
-    if (distEl) distEl.textContent = `Distance: ${config.heading.split('(')[1]?.replace(')', '') || '350m'} • Clearance: 500m`;
-    if (instEl) instEl.textContent = `📍 ${config.instruction}`;
-    if (headingEl) headingEl.textContent = `Heading: ${config.heading}`;
-}
+    if (nameEl) nameEl.textContent = destName;
+    if (headingEl) headingEl.textContent = `Heading: ${heading}`;
+    if (instEl) instEl.textContent = advice;
 
-async function refreshEvacuationRoute() {
-    showNotification('📡 Calculating geospatial escape vectors...', 'info');
+    // Call real OpenStreetMap OSRM routing engine
+    const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLon},${startLat};${endLon},${endLat}?overview=full&geometries=geojson&steps=true`;
+
     try {
-        const response = await fetch('/api/evacuation_routes?sector_zone=' + currentSectorZone);
-        if (response.ok) {
-            const routeData = await response.json();
-            const route = routeData.recommended_route;
-            updateGeospatialEvacuationRoute(currentDetectionData?.species || 'Elephant', currentSectorZone, 85);
-            showNotification('✅ Safe Evacuation Vector Calculated!', 'safe');
+        const response = await fetch(osrmUrl);
+        const data = await response.json();
+
+        let routeCoords = [[startLat, startLon], [endLat, endLon]];
+        let distanceKm = 0;
+        let durationMin = 0;
+
+        if (data.routes && data.routes.length > 0) {
+            const route = data.routes[0];
+            routeCoords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+            routeCoords.unshift([startLat, startLon]);
+            routeCoords.push([endLat, endLon]);
+
+            distanceKm = (route.distance / 1000).toFixed(1);
+            durationMin = Math.round(route.duration / 60);
+
+            if (distEl) {
+                distEl.textContent = `Distance: ${distanceKm} km • Estimated Travel Time: ~${durationMin} mins`;
+            }
+
+            // Display turn-by-turn steps if available
+            if (route.legs && route.legs[0].steps && stepsList && stepsCont) {
+                const steps = route.legs[0].steps.filter(s => s.maneuver && s.maneuver.instruction || s.name);
+                if (steps.length > 0) {
+                    stepsList.innerHTML = steps.map(s => `
+                        <li style="margin-bottom: 4px;">
+                            ${s.maneuver.instruction || (s.name ? 'Follow ' + s.name : 'Continue on road')}
+                            ${s.distance > 0 ? ` <span style="color: #94a3b8;">(${(s.distance).toFixed(0)}m)</span>` : ''}
+                        </li>
+                    `).join('');
+                    stepsCont.style.display = 'block';
+                }
+            }
+        } else {
+            const approxDist = (Math.hypot(startLat - endLat, startLon - endLon) * 111).toFixed(1);
+            if (distEl) distEl.textContent = `Direct Distance: ~${approxDist} km (Road network routing unavailable)`;
         }
-    } catch(e) {
-        updateGeospatialEvacuationRoute(currentDetectionData?.species || 'Elephant', currentSectorZone, 85);
-        showNotification('✅ Local Escape Route Calculated', 'safe');
+
+        // Draw Polyline on User Map
+        if (userGisRoutePolyline) {
+            userGisRoutePolyline.setLatLngs(routeCoords);
+        } else {
+            userGisRoutePolyline = L.polyline(routeCoords, {
+                color: '#10b981',
+                weight: 6,
+                opacity: 0.9,
+                dashArray: '6, 8'
+            }).addTo(userMap);
+        }
+
+        userMap.fitBounds(L.latLngBounds(routeCoords), { padding: [40, 40] });
+        showNotification(`✅ Real-time escape route plotted to ${destName}!`, 'safe');
+    } catch (e) {
+        console.warn('OSRM Route fetch error, drawing direct line:', e);
+        const fallbackCoords = [[startLat, startLon], [endLat, endLon]];
+        if (userGisRoutePolyline) {
+            userGisRoutePolyline.setLatLngs(fallbackCoords);
+        } else {
+            userGisRoutePolyline = L.polyline(fallbackCoords, { color: '#10b981', weight: 5 }).addTo(userMap);
+        }
+        userMap.fitBounds(L.latLngBounds(fallbackCoords), { padding: [40, 40] });
+        if (distEl) distEl.textContent = `Direct Vector Clearance Active`;
     }
 }
 
-// ===================================
-// Officer Tactical Decision Support Actions
-// ===================================
-function dispatchPatrolUnit(unitName) {
-    showNotification(`🚨 Dispatching Rapid Response Patrol ${unitName} to ${currentSectorZone.replace(/_/g, ' ')}...`, 'danger');
-    setTimeout(() => {
-        showNotification(`✅ Patrol ${unitName} En Route. ETA: 8 minutes. GPS Tracker Active.`, 'safe');
-    }, 1500);
+// Function triggered from Sighting Form / Animal detection
+function focusEvacuationRoute(species) {
+    const evacSection = document.getElementById('evacuation');
+    if (evacSection) {
+        evacSection.scrollIntoView({ behavior: 'smooth' });
+    }
+    showNotification(`🚨 Evacuating from ${species.toUpperCase()} threat centroid...`, 'warning');
+    calculateRealSafeRoute();
 }
 
-function triggerAudioRepellent(type) {
-    showNotification(`🔊 Activating High-Decibel ${type.toUpperCase()} Acoustic Speaker Array in ${currentSectorZone.replace(/_/g, ' ')}...`, 'warning');
-    doPlaySound();
+function refreshEvacuationRoute() {
+    calculateRealSafeRoute();
 }
 
 // Auto-initialize GIS maps on load

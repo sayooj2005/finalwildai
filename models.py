@@ -110,3 +110,67 @@ class SystemSetting(Base):
     key = Column(String, unique=True, index=True)
     value = Column(String)
 
+class WildlifeEvidenceSubmission(Base):
+    __tablename__ = "wildlife_evidence_submissions"
+    id = Column(Integer, primary_key=True, index=True)
+    submission_id = Column(String, unique=True, index=True) # UUID string
+    timestamp = Column(DateTime, default=datetime.now)
+    file_name = Column(String)
+    file_path = Column(String)
+    file_size_bytes = Column(Integer)
+    mime_type = Column(String)
+    sha256_hash = Column(String, index=True)
+    phash = Column(String, index=True)
+    
+    # User-provided metadata (privacy-safe)
+    suspected_animal = Column(String, default="unknown") # tiger, elephant, wild boar, other, unknown
+    source_type = Column(String, default="unknown") # mobile camera, CCTV/IP camera, trail camera, downloaded image, unknown
+    reported_location_name = Column(String, nullable=True)
+    reported_lat = Column(Float, nullable=True)
+    reported_lon = Column(Float, nullable=True)
+    reported_capture_time = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    contact_info = Column(String, nullable=True) # Optional contact, protected
+    
+    # Technical & EXIF metadata (stored as JSON)
+    metadata_json = Column(String, nullable=True)
+    embedded_lat = Column(Float, nullable=True)
+    embedded_lon = Column(Float, nullable=True)
+    embedded_timestamp = Column(String, nullable=True)
+    camera_make = Column(String, nullable=True)
+    camera_model = Column(String, nullable=True)
+    lens_model = Column(String, nullable=True)
+    software_history = Column(String, nullable=True)
+    
+    # Forensics & Duplicate analysis (stored as JSON)
+    forensics_json = Column(String, nullable=True)
+    duplicate_json = Column(String, nullable=True)
+    
+    # Location verification analysis (stored as JSON)
+    location_verification_json = Column(String, nullable=True)
+    location_classification = Column(String, default="Location unavailable")
+    
+    # Wildlife AI Detection (stored as JSON)
+    wildlife_detection_json = Column(String, nullable=True)
+    
+    # Evidence Decision Engine Outcome
+    decision_outcome = Column(String, default="ACCEPTED FOR REVIEW") # ACCEPTED FOR REVIEW, FLAGGED FOR REVIEW, REJECTED, ANALYSIS INCOMPLETE
+    decision_explanation = Column(String)
+    flags_json = Column(String, nullable=True)
+    
+    # Reviewer & Audit Trail
+    review_status = Column(String, default="PENDING") # PENDING, UNDER_REVIEW, VERIFIED, REJECTED
+    reviewer_notes = Column(String, nullable=True)
+    reviewed_by = Column(String, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+
+class EvidenceAuditLog(Base):
+    __tablename__ = "evidence_audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    submission_id = Column(String, index=True)
+    action = Column(String) # SUBMISSION_CREATED, STATUS_UPDATED, REVIEWER_NOTE_ADDED, REJECTED, VERIFIED
+    performed_by = Column(String) # SYSTEM or username
+    details = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.now)
+
+

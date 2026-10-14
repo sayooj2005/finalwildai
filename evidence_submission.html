@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildAI - Image Authenticity & Wildlife Evidence Submission</title>
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --panel-dark: #1e293b;
+            --text-light: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --accent: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --border: #334155;
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            margin: 0;
+            padding: 0;
+            line-height: 1.5;
+        }
+
+        .navbar {
+            background: var(--panel-dark);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .navbar h1 { margin: 0; font-size: 1.3rem; letter-spacing: 1px; }
+        .navbar h1 span { color: var(--accent); }
+        .nav-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active { color: var(--accent); font-weight: 600; }
+
+        .container {
+            max-width: 900px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: var(--panel-dark);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+        }
+
+        .card-header {
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 12px;
+            margin-bottom: 20px;
+        }
+        .card-header h2 { margin: 0; font-size: 1.25rem; color: var(--text-light); display: flex; align-items: center; gap: 8px; }
+        .card-header p { margin: 5px 0 0; font-size: 0.88rem; color: var(--text-muted); }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .full-width { grid-column: span 2; }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        label {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #cbd5e1;
+        }
+        .required::after { content: " *"; color: var(--danger); }
+
+        input, select, textarea {
+            background: #0f172a;
+            border: 1px solid var(--border);
+            color: var(--text-light);
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--primary);
+        }
+
+        /* Drag & Drop Zone */
+        .dropzone {
+            border: 2px dashed #475569;
+            border-radius: 8px;
+            padding: 30px 20px;
+            text-align: center;
+            background: rgba(15, 23, 42, 0.6);
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--accent);
+            background: rgba(16, 185, 129, 0.05);
+        }
+        .dropzone input[type="file"] {
+            display: none;
+        }
+        .dropzone-icon {
+            font-size: 2.2rem;
+            margin-bottom: 8px;
+        }
+        .dropzone p {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #cbd5e1;
+        }
+        .dropzone span {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* Image Preview Box */
+        .preview-wrapper {
+            display: none;
+            margin-top: 15px;
+            text-align: center;
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            max-height: 380px;
+            border: 1px solid var(--border);
+        }
+        .preview-wrapper img {
+            max-width: 100%;
+            max-height: 380px;
+            object-fit: contain;
+        }
+        .preview-info {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(15, 23, 42, 0.85);
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Interactive Leaflet Map */
+        #map {
+            height: 250px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            margin-top: 5px;
+        }
+
+        /* Buttons */
+        .btn-submit {
+            background: var(--accent);
+            color: #0f172a;
+            border: none;
+            padding: 14px 20px;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            width: 100%;
+            transition: opacity 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+        .btn-submit:hover { opacity: 0.9; }
+        .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Progress & Loader */
+        .progress-box {
+            display: none;
+            margin-top: 15px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #334155;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+        .status-text {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 6px;
+            text-align: center;
+        }
+
+        /* Submission Results Overlay */
+        .result-container {
+            display: none;
+            margin-top: 25px;
+            border-left: 5px solid var(--accent);
+            animation: fadeIn 0.3s ease;
+        }
+        .result-container.flagged { border-left-color: var(--warning); }
+        .result-container.rejected { border-left-color: var(--danger); }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge.accepted { background: rgba(16, 185, 129, 0.2); color: var(--accent); border: 1px solid var(--accent); }
+        .badge.flagged { background: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid var(--warning); }
+        .badge.rejected { background: rgba(239, 68, 68, 0.2); color: var(--danger); border: 1px solid var(--danger); }
+        .badge.incomplete { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); border: 1px solid var(--text-muted); }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .meta-item {
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+        .meta-item label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
+        .meta-item .val { font-size: 0.95rem; font-weight: 600; margin-top: 2px; }
+
+        .alert-banner {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid var(--primary);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: #93c5fd;
+            margin-bottom: 20px;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (max-width: 650px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .full-width { grid-column: span 1; }
+            .navbar { flex-direction: column; gap: 10px; }
+            .nav-links a { margin: 0 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <h1>WILD<span>AI</span> Evidence Portal</h1>
+        <div class="nav-links">
+            <a href="/" title="Hub Home">Hub Home</a>
+            <a href="/evidence-submission" class="active">Submit Evidence</a>
+            <a href="/evidence-dashboard">Officer Dashboard</a>
+            <a href="/map">Tactical Map</a>
+        </div>
+    </div>
+
+    <div class="container">
+
+        <div class="alert-banner">
+            <strong>Authenticity & Integrity Assurance:</strong> Submissions are analyzed through transparent EXIF verification,
+            Trivandrum boundary checks, perceptual deduplication, and forensic consistency screening.
+            Missing metadata is never automatically deemed fraudulent.
+        </div>
+
+        <form id="evidenceForm">
+            <div class="card">
+                <div class="card-header">
+                    <h2>1. Photographic Wildlife Evidence</h2>
+                    <p>Select or drag a wildlife image (JPEG, PNG, WebP up to 15MB). Mobile camera, CCTV exports, and trail cam frames supported.</p>
+                </div>
+
+                <div class="dropzone" id="dropzone">
+                    <input type="file" id="fileInput" name="image" accept="image/jpeg,image/png,image/webp" required>
+                    <div class="dropzone-icon">📷</div>
+                    <p><strong>Click to browse</strong> or drag & drop image here</p>
+                    <span>Supported formats: JPEG, JPG, PNG, WebP (Max 15MB)</span>
+                </div>
+
+                <div class="preview-wrapper" id="previewWrapper">
+                    <img id="imagePreview" alt="Evidence Preview">
+                    <div class="preview-info">
+                        <span id="previewFilename">image.jpg</span>
+                        <span id="previewSize">0 KB</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2>2. Sighting Context & Location (Optional)</h2>
+                    <p>Select suspected animal and sighting location on the Thiruvananthapuram (Trivandrum) regional map.</p>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="suspectedAnimal">Suspected Animal</label>
+                        <select id="suspectedAnimal" name="suspected_animal">
+                            <option value="unknown">Unknown / Not Identified</option>
+                            <option value="tiger">Tiger</option>
+                            <option value="elephant">Elephant</option>
+                            <option value="wild boar">Wild Boar</option>
+                            <option value="other">Other Wildlife</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="sourceType">Image Source Type</label>
+                        <select id="sourceType" name="source_type">
+                            <option value="unknown">Unknown</option>
+                            <option value="mobile camera">Mobile Camera (Smartphone)</option>
+                            <option value="CCTV/IP camera">CCTV / IP Camera Export</option>
+                            <option value="trail camera">Trail Camera (Camera Trap)</option>
+                            <option value="downloaded image">Downloaded / Forwarded Image</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="captureTime">Capture Date and Time (if known)</label>
+                        <input type="datetime-local" id="captureTime" name="capture_time">
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label>Sighting Location (Click Map or Use GPS)</label>
+                        <div style="display: flex; gap: 10px; margin-bottom: 6px;">
+                            <input type="text" id="locName" name="capture_location_name" placeholder="E.g. Ponmudi Ridge, Kallar, Peppara Forest..." style="flex: 1;">
+                            <button type="button" onclick="getCurrentGPS()" style="background: var(--panel-dark); border: 1px solid var(--border); color: var(--text-light); padding: 8px 12px; border-radius: 6px; cursor: pointer;">📍 Device GPS</button>
+                        </div>
+                        <div id="map"></div>
+                        <input type="hidden" id="lat" name="capture_lat">
+                        <input type="hidden" id="lon" name="capture_lon">
+                        <span style="font-size: 0.78rem; color: var(--text-muted); margin-top: 4px;">Target Surveillance Region: Thiruvananthapuram (Trivandrum), Kerala, India.</span>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="description">Observation Description (Optional)</label>
+                        <textarea id="description" name="description" rows="2" placeholder="Describe animal posture, herd size, or behavior observed..."></textarea>
+                    </div>
+
+                    <div class="form-group full-width">
+                        <label for="contactDetails">Contact Details (Optional & Protected)</label>
+                        <input type="text" id="contactDetails" name="contact_details" placeholder="Phone or email (accessible to authorized forest rangers only)">
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn-submit" id="submitBtn">
+                <span>Submit Evidence for Integrity Verification</span>
+            </button>
+
+            <div class="progress-box" id="progressBox">
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="status-text" id="statusText">Analyzing file integrity and metadata...</div>
+            </div>
+        </form>
+
+        <!-- Verification Results Card -->
+        <div class="card result-container" id="resultCard">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2>Verification Outcome</h2>
+                    <p id="resSubmissionId">Submission ID: EV-XXXX</p>
+                </div>
+                <span class="badge" id="resBadge">ACCEPTED</span>
+            </div>
+
+            <p id="resExplanation" style="font-size: 0.95rem; margin-top: 10px;"></p>
+
+            <div class="meta-grid">
+                <div class="meta-item">
+                    <label>EXIF Metadata</label>
+                    <div class="val" id="resMetaCamera">--</div>
+                </div>
+                <div class="meta-item">
+                    <label>Capture Timestamp</label>
+                    <div class="val" id="resMetaTime">--</div>
+                </div>
+                <div class="meta-item">
+                    <label>Location Consistency</label>
+                    <div class="val" id="resLocClass">--</div>
+                </div>
+                <div class="meta-item">
+                    <label>AI Forensics Verdict</label>
+                    <div class="val" id="resForensics">--</div>
+                </div>
+                <div class="meta-item">
+                    <label>Duplicates / Repeats</label>
+                    <div class="val" id="resDuplicates">0 matches</div>
+                </div>
+                <div class="meta-item">
+                    <label>YOLO Wildlife Detection</label>
+                    <div class="val" id="resYolo">--</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px; text-align: right;">
+                <a id="viewDashboardLink" href="/evidence-dashboard" style="color: var(--accent); text-decoration: none; font-weight: 600; font-size: 0.9rem;">View in Officer Dashboard &rarr;</a>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Initialize Leaflet Map centered on Trivandrum (8.5241, 76.9366)
+        const map = L.map('map').setView([8.5241, 76.9366], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 18,
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        // Highlight Trivandrum boundary bounding box
+        const trivandrumBounds = [[8.15, 76.65], [8.95, 77.35]];
+        L.rectangle(trivandrumBounds, {color: "#3b82f6", weight: 1.5, fillOpacity: 0.05}).addTo(map);
+
+        let marker = null;
+        map.on('click', function(e) {
+            setMapCoordinates(e.latlng.lat, e.latlng.lng);
+        });
+
+        function setMapCoordinates(lat, lon) {
+            if (marker) map.removeLayer(marker);
+            marker = L.marker([lat, lon]).addTo(map);
+            document.getElementById('lat').value = lat.toFixed(6);
+            document.getElementById('lon').value = lon.toFixed(6);
+            if (!document.getElementById('locName').value) {
+                document.getElementById('locName').value = `Map Coordinates: ${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+            }
+        }
+
+        function getCurrentGPS() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        const lat = pos.coords.latitude;
+                        const lon = pos.coords.longitude;
+                        map.setView([lat, lon], 13);
+                        setMapCoordinates(lat, lon);
+                    },
+                    (err) => alert("Could not fetch GPS: " + err.message)
+                );
+            } else {
+                alert("Geolocation is not supported by your browser.");
+            }
+        }
+
+        // File Selection & Drag-and-Drop
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+        const previewWrapper = document.getElementById('previewWrapper');
+        const imagePreview = document.getElementById('imagePreview');
+        const previewFilename = document.getElementById('previewFilename');
+        const previewSize = document.getElementById('previewSize');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileSelect(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            if (!file) return;
+            const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+            if (!validTypes.includes(file.type)) {
+                alert("Please select a valid image file (JPEG, PNG, WebP).");
+                return;
+            }
+            if (file.size > 15 * 1024 * 1024) {
+                alert("File size exceeds 15MB limit.");
+                return;
+            }
+
+            previewFilename.innerText = file.name;
+            previewSize.innerText = `${(file.size / 1024).toFixed(1)} KB`;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                imagePreview.src = e.target.result;
+                previewWrapper.style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Evidence Submission Handler
+        const form = document.getElementById('evidenceForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const progressBox = document.getElementById('progressBox');
+        const progressFill = document.getElementById('progressFill');
+        const statusText = document.getElementById('statusText');
+        const resultCard = document.getElementById('resultCard');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                alert("Please select an image file first.");
+                return;
+            }
+
+            submitBtn.disabled = true;
+            progressBox.style.display = 'block';
+            resultCard.style.display = 'none';
+            progressFill.style.width = '30%';
+            statusText.innerText = "Uploading evidence image...";
+
+            const formData = new FormData(form);
+
+            try {
+                progressFill.style.width = '65%';
+                statusText.innerText = "Extracting metadata & executing verification pipeline...";
+
+                const res = await fetch('/api/evidence/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                progressFill.style.width = '100%';
+                const data = await res.json();
+
+                submitBtn.disabled = false;
+                progressBox.style.display = 'none';
+
+                if (data.success) {
+                    renderResult(data);
+                } else {
+                    alert(`Submission Error: ${data.message || data.error}`);
+                }
+            } catch (err) {
+                submitBtn.disabled = false;
+                progressBox.style.display = 'none';
+                alert("Network communication error. Please try again.");
+            }
+        });
+
+        function renderResult(data) {
+            resultCard.style.display = 'block';
+            resultCard.className = 'card result-container ' +
+                (data.decision.outcome === 'ACCEPTED FOR REVIEW' ? '' :
+                 data.decision.outcome === 'FLAGGED FOR REVIEW' ? 'flagged' : 'rejected');
+
+            document.getElementById('resSubmissionId').innerText = `Submission ID: ${data.submission_id} (${new Date(data.timestamp).toLocaleTimeString()})`;
+            
+            const badge = document.getElementById('resBadge');
+            badge.innerText = data.decision.outcome;
+            badge.className = 'badge ' + 
+                (data.decision.outcome === 'ACCEPTED FOR REVIEW' ? 'accepted' :
+                 data.decision.outcome === 'FLAGGED FOR REVIEW' ? 'flagged' : 'rejected');
+
+            document.getElementById('resExplanation').innerText = data.decision.explanation;
+
+            document.getElementById('resMetaCamera').innerText = data.metadata.camera;
+            document.getElementById('resMetaTime').innerText = data.metadata.capture_timestamp;
+            document.getElementById('resLocClass').innerText = data.location_verification.classification;
+            document.getElementById('resForensics').innerText = data.forensics.verdict;
+            
+            const dupCount = (data.duplicate_detection.exact_matches_count || 0) + (data.duplicate_detection.near_matches_count || 0);
+            document.getElementById('resDuplicates').innerText = dupCount > 0 ? `${dupCount} duplicate(s) flagged` : 'No duplicates detected';
+
+            const sp = data.wildlife_detection.detected_species;
+            document.getElementById('resYolo').innerText = sp ? `${sp.toUpperCase()} (${Math.round(data.wildlife_detection.confidence * 100)}%)` : 'No wildlife detected';
+
+            resultCard.scrollIntoView({ behavior: 'smooth' });
+        }
+    </script>
+</body>
+</html>

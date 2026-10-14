@@ -1,4 +1,6 @@
 import os
+import time
+import json
 import cv2
 import asyncio
 import io
@@ -16,6 +18,9 @@ from twilio.rest import Client as TwilioClient
 # Database setup
 import models
 from database import engine, get_db, SessionLocal
+import uuid
+import evidence_verification
+
 
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 import secrets
@@ -71,12 +76,16 @@ SECTOR_ZONES = {
     "zone4_agri_sector": {"name": "Zone 4 - Peppara Wildlife Border", "lat": 8.6231, "lon": 77.1353}
 }
 
-# Known Safe Evacuation Havens (Ponmudi & Trivandrum Outskirts)
+# Known Safe Evacuation Havens & Emergency Facilities (Thiruvananthapuram District)
 SAFE_HAVENS = [
-    {"id": 1, "name": "KTDC Golden Peak Refuge / Police Station", "lat": 8.7580, "lon": 77.1175, "capacity": 150, "contact": "+91-471-2815225"},
-    {"id": 2, "name": "Kallar Forest Base Camp", "lat": 8.7180, "lon": 77.1050, "capacity": 100, "contact": "+91-471-2815226"},
-    {"id": 3, "name": "Vithura Community Shelter Hub", "lat": 8.6754, "lon": 77.0901, "capacity": 300, "contact": "+91-471-2815227"},
-    {"id": 4, "name": "Peppara Dam Guard Station", "lat": 8.6250, "lon": 77.1360, "capacity": 80, "contact": "+91-471-2815228"}
+    {"id": 1, "name": "KTDC Golden Peak Refuge / Forest Police Post", "type": "shelter", "lat": 8.7580, "lon": 77.1175, "capacity": 150, "contact": "+91-471-2815225"},
+    {"id": 2, "name": "Kallar Forest Base Camp & First-Aid Post", "type": "shelter", "lat": 8.7180, "lon": 77.1050, "capacity": 100, "contact": "+91-471-2815226"},
+    {"id": 3, "name": "Vithura Community Evacuation Shelter Hub", "type": "shelter", "lat": 8.6754, "lon": 77.0901, "capacity": 300, "contact": "+91-471-2815227"},
+    {"id": 4, "name": "Peppara Dam Forest Guard Station", "type": "shelter", "lat": 8.6250, "lon": 77.1360, "capacity": 80, "contact": "+91-471-2815228"},
+    {"id": 5, "name": "Taluk Headquarter Hospital Nedumangad", "type": "hospital", "lat": 8.6042, "lon": 77.0016, "capacity": 250, "contact": "+91-472-2802244"},
+    {"id": 6, "name": "Govt Medical College Hospital Trivandrum", "type": "hospital", "lat": 8.5235, "lon": 76.9282, "capacity": 1200, "contact": "+91-471-2528300"},
+    {"id": 7, "name": "Forest Central Emergency Station PTP Nagar", "type": "emergency_service", "lat": 8.5085, "lon": 76.9740, "capacity": 50, "contact": "+91-471-2360762"},
+    {"id": 8, "name": "Palode Forest Range Office & Rapid Response Unit", "type": "emergency_service", "lat": 8.7042, "lon": 77.0268, "capacity": 60, "contact": "+91-472-2840232"}
 ]
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -96,6 +105,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("uploads", exist_ok=True)
+os.makedirs(os.path.join("uploads", "evidence"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # ESP32-CAM Global State
 latest_esp32_frame = None
@@ -621,26 +634,100 @@ async def assess_risk(request: Request):
         }
     }
 
-# --- Geospatial Safe Evacuation Route Engine ---
-@app.post("/api/evacuation_routes")
-async def calculate_evacuation_routes(request: Request):
-    """Calculates safe escape routes away from threat centroid using geospatial analysis."""
-    data = await request.json()
-    user_lat = float(data.get("user_lat", 11.260))
-    user_lon = float(data.get("user_lon", 75.785))
-    threat_lat = float(data.get("threat_lat", 11.258))
-    threat_lon = float(data.get("threat_lon", 75.782))
-    threat_species = data.get("threat_species", "Elephant")
-    risk_level = data.get("risk_level", "HIGH")
+@app.get("/api/safe_havens")
+def get_safe_havens(lat: float = None, lon: float = None):
+    """Returns verified evacuation havens, shelters, and hospitals in the region."""
+    havens = []
+    for h in SAFE_HAVENS:
+        dist_km = None
+        if lat is not None and lon is not None:
+            # Haversine distance in km
+            d_lat = math.radians(h["lat"] - lat)
+            d_lon = math.radians(h["lon"] - lon)
+            a = math.sin(d_lat/2)**2 + math.cos(math.radians(lat)) * math.cos(math.radians(h["lat"])) * math.sin(d_lon/2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            dist_km = round(6371 * c, 2)
+        h_copy = dict(h)
+        h_copy["distance_km"] = dist_km
+        havens.append(h_copy)
+    if lat is not None and lon is not None:
+        havens.sort(key=lambda x: x["distance_km"] or 9999)
+    return {"safe_havens": havens, "count": len(havens)}
 
-    # Calculate vector away from threat
+@app.get("/api/threats/active")
+def get_active_threats(db: Session = Depends(get_db)):
+    """
+    Returns active verified wildlife threats with confirmed GPS coordinates.
+    Distinguishes verified sensor detections from unverified citizen submissions.
+    """
+    threats = []
+
+    # 1. Sector zone sensors (Ponmudi/Trivandrum)
+    for zone_id, zone_data in SECTOR_ZONES.items():
+        threats.append({
+            "id": f"sensor-{zone_id}",
+            "source": "surveillance_sensor",
+            "is_verified": True,
+            "species": "Elephant Herd" if zone_id == "zone1_forest_border" else ("Tiger" if zone_id == "zone2_village_buffer" else "Wild Boar"),
+            "lat": zone_data["lat"],
+            "lon": zone_data["lon"],
+            "location_name": zone_data["name"],
+            "status": "ACTIVE_MONITORING",
+            "risk_score": 85 if zone_id in ["zone1_forest_border", "zone2_village_buffer"] else 60,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
+
+    # 2. Database evidence submissions with valid GPS
+    ev_subs = db.query(models.WildlifeEvidenceSubmission).filter(
+        models.WildlifeEvidenceSubmission.decision_outcome.in_(["ACCEPTED FOR REVIEW", "FLAGGED FOR REVIEW"])
+    ).order_by(models.WildlifeEvidenceSubmission.id.desc()).limit(15).all()
+
+    for sub in ev_subs:
+        s_lat = sub.embedded_lat or sub.reported_lat
+        s_lon = sub.embedded_lon or sub.reported_lon
+        if s_lat and s_lon:
+            threats.append({
+                "id": f"evidence-{sub.submission_id}",
+                "source": "citizen_evidence",
+                "is_verified": sub.review_status == "APPROVED" or sub.decision_outcome == "ACCEPTED FOR REVIEW",
+                "species": sub.suspected_animal or "Wildlife",
+                "lat": float(s_lat),
+                "lon": float(s_lon),
+                "location_name": sub.reported_location_name or "Reported Sighting Location",
+                "status": "EVIDENCE_SUBMISSION",
+                "risk_score": 75 if sub.suspected_animal in ["tiger", "elephant"] else 50,
+                "timestamp": sub.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+    return {"active_threats": threats, "count": len(threats)}
+
+# --- Geospatial Safe Evacuation Route Engine ---
+@app.api_route("/api/evacuation_routes", methods=["GET", "POST"])
+async def calculate_evacuation_routes(request: Request, db: Session = Depends(get_db)):
+    """Calculates safe escape routes away from threat centroids using user's GPS coordinates."""
+    if request.method == "POST":
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+    else:
+        data = dict(request.query_params)
+
+    # User's actual GPS location from browser
+    user_lat = float(data.get("user_lat", 8.5241))
+    user_lon = float(data.get("user_lon", 76.9366))
+    custom_threat_lat = data.get("threat_lat")
+    custom_threat_lon = data.get("threat_lon")
+    threat_species = data.get("threat_species", "Wildlife Threat")
+
+    # Determine nearest threat
+    threat_lat = float(custom_threat_lat) if custom_threat_lat is not None else 8.7599
+    threat_lon = float(custom_threat_lon) if custom_threat_lon is not None else 77.1169
+
+    # Check distance to threat
     dlat = user_lat - threat_lat
     dlon = user_lon - threat_lon
     threat_distance_m = math.sqrt(dlat**2 + dlon**2) * 111000
-
-    # Select best safe haven away from threat line
-    best_haven = None
-    max_safe_dist = -1
 
     routes = []
     for haven in SAFE_HAVENS:
@@ -648,38 +735,49 @@ async def calculate_evacuation_routes(request: Request):
         dist_to_haven = math.sqrt((haven["lat"] - user_lat)**2 + (haven["lon"] - user_lon)**2) * 111000
         # Distance from threat to safe haven
         threat_to_haven = math.sqrt((haven["lat"] - threat_lat)**2 + (haven["lon"] - threat_lon)**2) * 111000
-        
+
         # Heading calculation
         angle_rad = math.atan2(haven["lat"] - user_lat, haven["lon"] - user_lon)
         angle_deg = (math.degrees(angle_rad) + 360) % 360
-        
+
         dirs = ["North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"]
         heading_str = dirs[int((angle_deg + 22.5) / 45) % 8]
 
-        is_safe = threat_to_haven > threat_distance_m
-        
+        # Route is safer if it moves away from threat centroid
+        is_safe_vector = threat_to_haven >= threat_distance_m
+
         routes.append({
             "haven_id": haven["id"],
             "haven_name": haven["name"],
+            "haven_type": haven.get("type", "shelter"),
             "lat": haven["lat"],
             "lon": haven["lon"],
+            "contact": haven.get("contact", "100 / 112"),
             "distance_meters": int(dist_to_haven),
             "threat_clearance_meters": int(threat_to_haven),
             "recommended_heading": heading_str,
-            "is_recommended": is_safe and dist_to_haven < 1500,
-            "instruction": f"Proceed {heading_str} for {int(dist_to_haven)}m towards {haven['name']}. Avoid Western Corridor."
+            "is_recommended": is_safe_vector,
+            "instruction": f"Proceed {heading_str} for {int(dist_to_haven)}m towards {haven['name']} ({haven.get('type', 'shelter')})."
         })
 
-    # Sort routes by recommendation and proximity
-    routes.sort(key=lambda r: (-r["is_recommended"], r["distance_meters"]))
+    # Sort routes: prioritize safety vector away from threat, then shortest distance (quickest safe point)
+    routes.sort(key=lambda r: (
+        not r["is_recommended"],
+        r["distance_meters"]
+    ))
     recommended_route = routes[0] if routes else None
+
+    # Calculate travel time estimate (at 30 km/h in suburban/rural road network)
+    travel_time_min = round((recommended_route["distance_meters"] / 1000) / 30 * 60) if recommended_route else 0
+    travel_time_min = max(travel_time_min, 1)
 
     return {
         "user_location": {"lat": user_lat, "lon": user_lon},
         "threat_location": {"lat": threat_lat, "lon": threat_lon, "species": threat_species, "danger_radius_m": 400},
         "recommended_route": recommended_route,
+        "estimated_travel_time_minutes": travel_time_min,
         "all_routes": routes,
-        "action_advice": f"CRITICAL: {threat_species} intrusion detected nearby! Follow highlighted green route to {recommended_route['haven_name']} immediately."
+        "action_advice": f"🚨 Quickest Safe Point: {recommended_route['haven_name']} (~{travel_time_min} mins away). Proceed immediately away from {threat_species} sector."
     }
 
 # --- Decision Support Endpoint for Forest Officers ---
@@ -818,12 +916,60 @@ def get_alerts(db: Session = Depends(get_db)):
 @app.post("/api/reports/{report_id}/validate")
 async def validate_report(report_id: int, request: Request, db: Session = Depends(get_db)):
     data = await request.json()
+    approved = data.get("approved", False)
+    new_status = "verified" if approved else "rejected"
+    
+    # Check CommunityReport first
     report = db.query(models.CommunityReport).filter(models.CommunityReport.id == report_id).first()
-    if not report:
-        return {"success": False, "message": "Report not found"}
-    report.status = "verified" if data.get("approved", False) else "rejected"
-    db.commit()
-    return {"success": True, "message": f"Report {report_id} {report.status}"}
+    if report:
+        matching_sub = db.query(models.WildlifeEvidenceSubmission).filter(
+            models.WildlifeEvidenceSubmission.file_path == report.image_path
+        ).first()
+        
+        if approved:
+            report.status = "verified"
+            report.is_authentic = True
+            if matching_sub:
+                matching_sub.review_status = "APPROVED"
+                matching_sub.decision_outcome = "CAMERA/CCTV EVIDENCE — VERIFIED"
+            db.commit()
+            return {"success": True, "message": f"Report {report_id} verified"}
+        else:
+            # Rejection policy: Remove from official reports collection and delete image file
+            file_to_delete = report.image_path
+            if matching_sub:
+                matching_sub.review_status = "REJECTED"
+                matching_sub.decision_outcome = "MANIPULATED — NOT AUTHENTIC"
+            db.delete(report)
+            db.commit()
+            if file_to_delete and os.path.exists(file_to_delete):
+                try:
+                    os.remove(file_to_delete)
+                except Exception as del_err:
+                    print(f"[WARN] Failed to delete rejected file {file_to_delete}: {del_err}")
+            return {"success": True, "message": f"Report {report_id} rejected and purged"}
+        
+    # Check WildlifeEvidenceSubmission
+    sub = db.query(models.WildlifeEvidenceSubmission).filter(models.WildlifeEvidenceSubmission.id == report_id).first()
+    if sub:
+        if approved:
+            sub.review_status = "APPROVED"
+            sub.decision_outcome = "CAMERA/CCTV EVIDENCE — VERIFIED"
+            db.commit()
+            return {"success": True, "message": f"Evidence Submission {report_id} verified"}
+        else:
+            sub.review_status = "REJECTED"
+            sub.decision_outcome = "MANIPULATED — NOT AUTHENTIC"
+            file_to_delete = sub.file_path
+            db.commit()
+            if file_to_delete and os.path.exists(file_to_delete):
+                try:
+                    os.remove(file_to_delete)
+                except Exception as del_err:
+                    print(f"[WARN] Failed to delete rejected file {file_to_delete}: {del_err}")
+            return {"success": True, "message": f"Evidence Submission {report_id} rejected and purged"}
+
+    return {"success": False, "message": "Report not found"}
 
 @app.get("/api/diagnostics")
 async def get_diagnostics():
@@ -850,11 +996,129 @@ async def get_diagnostics():
 
 @app.get("/api/reports")
 def get_reports(db: Session = Depends(get_db)):
-    return db.query(models.CommunityReport).filter(models.CommunityReport.status == "pending").order_by(models.CommunityReport.id.desc()).all()
+    results = []
+    
+    # 1. Existing community reports pending review
+    comm_reports = db.query(models.CommunityReport).filter(models.CommunityReport.status == "pending").order_by(models.CommunityReport.id.desc()).all()
+    for cr in comm_reports:
+        # Check if corresponding WildlifeEvidenceSubmission exists
+        ev_sub = db.query(models.WildlifeEvidenceSubmission).filter(
+            models.WildlifeEvidenceSubmission.file_path == cr.image_path
+        ).first()
+        
+        # Do not return rejected or non-authentic submissions
+        if ev_sub and ev_sub.review_status == "REJECTED":
+            continue
+
+        is_suspected_ai = False
+        ai_reason = ""
+        verification_status = "CAMERA/CCTV EVIDENCE — VERIFIED" if cr.is_authentic else "UNVERIFIED — MANUAL REVIEW REQUIRED"
+        
+        if ev_sub:
+            flags = json.loads(ev_sub.flags_json) if ev_sub.flags_json else []
+            if "SUSPECTED_AI" in flags:
+                is_suspected_ai = True
+                verification_status = "AI-GENERATED — NOT AUTHENTIC"
+                ai_reason = ev_sub.decision_explanation or "Forensic AI generation indicators detected"
+            elif "POTENTIAL_IMAGE_MANIPULATION" in flags or "SUSPICIOUS_SOFTWARE_HISTORY" in flags:
+                verification_status = "MANIPULATED — NOT AUTHENTIC"
+                ai_reason = ev_sub.decision_explanation or "Image manipulation detected"
+        elif not cr.is_authentic:
+            verification_status = "UNVERIFIED — MANUAL REVIEW REQUIRED"
+            ai_reason = "Missing camera capture evidence; manual review required."
+
+        results.append({
+            "id": cr.id,
+            "species": cr.species,
+            "location_text": cr.location_text,
+            "location_lat": cr.location_lat,
+            "location_lon": cr.location_lon,
+            "date": cr.date,
+            "time": cr.time,
+            "contact": cr.contact,
+            "is_authentic": cr.is_authentic,
+            "verification_status": verification_status,
+            "suspected_ai": is_suspected_ai,
+            "ai_reason": ai_reason,
+            "image_path": cr.image_path,
+            "status": cr.status
+        })
+        
+    # 2. Evidence submissions pending review (excluding rejected uploads)
+    ev_subs = db.query(models.WildlifeEvidenceSubmission).filter(
+        models.WildlifeEvidenceSubmission.review_status == "PENDING"
+    ).order_by(models.WildlifeEvidenceSubmission.id.desc()).limit(20).all()
+    
+    for ev in ev_subs:
+        if ev.decision_outcome in ["AI-GENERATED — NOT AUTHENTIC", "MANIPULATED — NOT AUTHENTIC", "REJECTED — INVALID FILE"]:
+            continue
+        # Avoid duplicate display if already mapped into CommunityReport
+        if any(r.get("image_path") == ev.file_path for r in results):
+            continue
+        flags = json.loads(ev.flags_json) if ev.flags_json else []
+        is_suspected_ai = "SUSPECTED_AI" in flags
+        results.append({
+            "id": ev.id,
+            "species": ev.suspected_animal or "Wildlife",
+            "location_text": ev.reported_location_name or f"GPS: {ev.embedded_lat or ev.reported_lat or 'N/A'}, {ev.embedded_lon or ev.reported_lon or 'N/A'}",
+            "location_lat": str(ev.embedded_lat or ev.reported_lat or ""),
+            "location_lon": str(ev.embedded_lon or ev.reported_lon or ""),
+            "date": ev.timestamp.strftime("%Y-%m-%d"),
+            "time": ev.timestamp.strftime("%H:%M"),
+            "contact": ev.contact_info or "Citizen Evidence",
+            "is_authentic": ev.decision_outcome == "CAMERA/CCTV EVIDENCE — VERIFIED",
+            "verification_status": ev.decision_outcome,
+            "suspected_ai": is_suspected_ai,
+            "ai_reason": ev.decision_explanation if is_suspected_ai else "",
+            "image_path": ev.file_path,
+            "status": "pending"
+        })
+        
+    return results
 
 @app.get("/api/reports/history")
 def get_reports_history(db: Session = Depends(get_db)):
-    return db.query(models.CommunityReport).filter(models.CommunityReport.status == "verified").order_by(models.CommunityReport.id.desc()).limit(20).all()
+    history = []
+    
+    # 1. Standard verified community reports
+    comm_reports = db.query(models.CommunityReport).filter(models.CommunityReport.status == "verified").order_by(models.CommunityReport.id.desc()).limit(30).all()
+    for cr in comm_reports:
+        history.append({
+            "id": cr.id,
+            "species": cr.species,
+            "location_text": cr.location_text or (f"Lat: {cr.location_lat}, Lon: {cr.location_lon}" if cr.location_lat else "GPS Verified"),
+            "location_lat": cr.location_lat,
+            "location_lon": cr.location_lon,
+            "date": cr.date,
+            "time": cr.time,
+            "contact": cr.contact,
+            "image_path": cr.image_path,
+            "status": "verified"
+        })
+
+    # 2. Approved evidence submissions
+    ev_subs = db.query(models.WildlifeEvidenceSubmission).filter(
+        models.WildlifeEvidenceSubmission.review_status == "APPROVED"
+    ).order_by(models.WildlifeEvidenceSubmission.id.desc()).limit(30).all()
+    
+    for ev in ev_subs:
+        if any(h.get("image_path") == ev.file_path for h in history):
+            continue
+        loc_str = ev.reported_location_name or f"Lat: {ev.embedded_lat or ev.reported_lat or 'N/A'}, Lon: {ev.embedded_lon or ev.reported_lon or 'N/A'}"
+        history.append({
+            "id": ev.id,
+            "species": ev.suspected_animal or "Wildlife",
+            "location_text": loc_str,
+            "location_lat": str(ev.embedded_lat or ev.reported_lat or ""),
+            "location_lon": str(ev.embedded_lon or ev.reported_lon or ""),
+            "date": ev.timestamp.strftime("%Y-%m-%d"),
+            "time": ev.timestamp.strftime("%H:%M"),
+            "contact": ev.contact_info or "Citizen Evidence",
+            "image_path": ev.file_path,
+            "status": "verified"
+        })
+
+    return history
 
 @app.get("/api/settings")
 def get_settings(db: Session = Depends(get_db)):
@@ -1200,7 +1464,446 @@ async def submit_community_report(
         print(f"[REPORT ERROR] {e}")
         return {"success": False, "message": "Failed to process report."}
 
+# =====================================================================
+# WILDAI Image Authenticity and Wildlife Evidence Verification Endpoints
+# =====================================================================
+evidence_upload_rate_limit = {}
+
+@app.get("/evidence-submission", response_class=HTMLResponse)
+@app.get("/evidence", response_class=HTMLResponse)
+async def evidence_submission_page():
+    """Serves the professional evidence-submission web interface."""
+    with open("evidence_submission.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+@app.get("/evidence-dashboard", response_class=HTMLResponse)
+async def evidence_dashboard_page():
+    """Serves the officer verification dashboard."""
+    with open("evidence_dashboard.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
+@app.post("/api/evidence/upload")
+async def upload_wildlife_evidence(
+    request: Request,
+    image: UploadFile = File(...),
+    suspected_animal: str = Form("unknown"),
+    capture_location_name: str = Form(""),
+    capture_lat: str = Form(""),
+    capture_lon: str = Form(""),
+    capture_time: str = Form(""),
+    source_type: str = Form("unknown"),
+    description: str = Form(""),
+    contact_details: str = Form(""),
+    db: Session = Depends(get_db)
+):
+    """
+    Validates, extracts metadata, screens with YOLO, runs forensics and duplicate checks,
+    applies the Evidence Decision Engine, and securely stores the submission.
+    """
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    ip_hash = hashlib.sha256(client_ip.encode()).hexdigest()
+
+    # Rate limiting: Max 10 uploads per 10 minutes per IP hash
+    now_ts = time.time()
+    if ip_hash in evidence_upload_rate_limit:
+        attempts, first_time = evidence_upload_rate_limit[ip_hash]
+        if now_ts - first_time < 600:
+            if attempts >= 10:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=429, detail="Rate limit exceeded. Please wait a few minutes before submitting more evidence.")
+            evidence_upload_rate_limit[ip_hash] = (attempts + 1, first_time)
+        else:
+            evidence_upload_rate_limit[ip_hash] = (1, now_ts)
+    else:
+        evidence_upload_rate_limit[ip_hash] = (1, now_ts)
+
+    # 1. MIME Type & Extension Validation
+    allowed_mimes = ["image/jpeg", "image/png", "image/webp"]
+    if image.content_type not in allowed_mimes:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": "UNSUPPORTED_FILE_TYPE",
+                "message": f"Unsupported MIME type '{image.content_type}'. Allowed types: JPEG, PNG, WebP."
+            }
+        )
+
+    # 2. File Size Validation (Max 15MB)
+    img_bytes = await image.read()
+    if len(img_bytes) == 0:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "EMPTY_FILE", "message": "Uploaded file is empty."}
+        )
+    if len(img_bytes) > 15 * 1024 * 1024:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "FILE_TOO_LARGE", "message": "File exceeds the 15MB maximum size limit."}
+        )
+
+    # 3. Image Decoding & Integrity Check
+    try:
+        pil_check = Image.open(io.BytesIO(img_bytes))
+        pil_check.verify()  # Verifies file integrity
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"success": False, "error": "CORRUPTED_IMAGE", "message": f"Image file is corrupted or malformed: {str(e)}"}
+        )
+
+    # Re-open PIL image for processing (verify() invalidates image buffer)
+    pil_img = Image.open(io.BytesIO(img_bytes))
+    width, height = pil_img.size
+
+    # Ensure uploads directory
+    evidence_dir = os.path.join("uploads", "evidence")
+    os.makedirs(evidence_dir, exist_ok=True)
+
+    submission_uuid = f"EV-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+    ext = os.path.splitext(image.filename)[1].lower() if image.filename else ".jpg"
+    if ext not in [".jpg", ".jpeg", ".png", ".webp"]:
+        ext = ".jpg"
+    saved_filename = f"{submission_uuid}{ext}"
+    saved_path = os.path.join(evidence_dir, saved_filename)
+
+    with open(saved_path, "wb") as f:
+        f.write(img_bytes)
+
+    # 4. Cryptographic & Perceptual Hashing
+    sha256_hash, phash_str = evidence_verification.compute_hashes(saved_path)
+
+    # 5. Metadata Extraction & Analysis
+    metadata_res = evidence_verification.extract_and_analyze_metadata(saved_path)
+
+    # Parse user coordinates if provided
+    rep_lat = None
+    rep_lon = None
+    try:
+        if capture_lat.strip():
+            rep_lat = float(capture_lat.strip())
+        if capture_lon.strip():
+            rep_lon = float(capture_lon.strip())
+    except ValueError:
+        pass
+
+    # 6. Location Verification
+    location_res = evidence_verification.verify_location_evidence(
+        embedded_lat=metadata_res.get("gps_latitude"),
+        embedded_lon=metadata_res.get("gps_longitude"),
+        reported_lat=rep_lat,
+        reported_lon=rep_lon,
+        reported_text=capture_location_name
+    )
+
+    # 7. CCTV / Camera Characteristics Analysis
+    cctv_res = evidence_verification.inspect_camera_source(
+        metadata_dict=metadata_res,
+        width=width,
+        height=height,
+        reported_source=source_type
+    )
+
+    # 8. AI-Forensics / Manipulation Evaluation
+    forensics_interface = evidence_verification.ImageForensicsInterface()
+    forensics_res = forensics_interface.evaluate(saved_path)
+
+    # 9. Duplicate Evidence Check
+    duplicate_res = evidence_verification.check_duplicate_evidence(
+        db_session=db,
+        current_sha256=sha256_hash,
+        current_phash=phash_str
+    )
+
+    # 10. Wildlife Detection (YOLO)
+    cv_img = cv2.imdecode(np.frombuffer(img_bytes, np.uint8), cv2.IMREAD_COLOR)
+    wildlife_model = cloud_iot_detector.model if cloud_iot_detector else None
+    wildlife_res = evidence_verification.screen_wildlife_evidence(cv_img, wildlife_model)
+
+    # 11. Evidence Decision Engine
+    decision = evidence_verification.evaluate_evidence_decision(
+        file_valid={"valid": True},
+        metadata_res=metadata_res,
+        forensics_res=forensics_res,
+        duplicate_res=duplicate_res,
+        location_res=location_res,
+        cctv_res=cctv_res,
+        user_data={"suspected_animal": suspected_animal, "source_type": source_type}
+    )
+
+    # 12. Save to Database
+    submission = models.WildlifeEvidenceSubmission(
+        submission_id=submission_uuid,
+        file_name=image.filename or saved_filename,
+        file_path=saved_path.replace("\\", "/"),
+        file_size_bytes=len(img_bytes),
+        mime_type=image.content_type,
+        sha256_hash=sha256_hash,
+        phash=phash_str,
+        suspected_animal=suspected_animal,
+        source_type=source_type,
+        reported_location_name=capture_location_name or None,
+        reported_lat=rep_lat,
+        reported_lon=rep_lon,
+        reported_capture_time=capture_time or None,
+        description=description or None,
+        contact_info=contact_details or None,
+        metadata_json=json.dumps(metadata_res),
+        embedded_lat=metadata_res.get("gps_latitude"),
+        embedded_lon=metadata_res.get("gps_longitude"),
+        embedded_timestamp=metadata_res.get("capture_timestamp"),
+        camera_make=metadata_res.get("camera_make"),
+        camera_model=metadata_res.get("camera_model"),
+        lens_model=metadata_res.get("lens_model"),
+        software_history="; ".join(metadata_res.get("software_history", [])) if metadata_res.get("software_history") else None,
+        forensics_json=json.dumps(forensics_res),
+        duplicate_json=json.dumps(duplicate_res),
+        location_verification_json=json.dumps(location_res),
+        location_classification=location_res.get("classification"),
+        wildlife_detection_json=json.dumps(wildlife_res),
+        decision_outcome=decision["outcome"],
+        decision_explanation=decision["explanation"],
+        flags_json=json.dumps(decision["flags"]),
+        review_status="REJECTED" if decision["outcome"] in ["AI-GENERATED — NOT AUTHENTIC", "MANIPULATED — NOT AUTHENTIC", "REJECTED — INVALID FILE"] else "PENDING"
+    )
+
+    db.add(submission)
+
+    # Storage and Deletion Requirements:
+    # If the image is confirmed AI-generated, manipulated, invalid, or rejected, reject it and do not create an official wildlife report.
+    # Also delete the temporary file after the rejection decision is committed.
+    is_rejected = decision["outcome"] in ["AI-GENERATED — NOT AUTHENTIC", "MANIPULATED — NOT AUTHENTIC", "REJECTED — INVALID FILE"]
+
+    if not is_rejected:
+        try:
+            # For unrejected images (CAMERA/CCTV EVIDENCE — VERIFIED or UNVERIFIED — MANUAL REVIEW REQUIRED), keep as pending in review area
+            comm_report = models.CommunityReport(
+                location_lat=str(rep_lat) if rep_lat is not None else "",
+                location_lon=str(rep_lon) if rep_lon is not None else "",
+                location_text=capture_location_name or (f"Lat: {rep_lat}, Lon: {rep_lon}" if rep_lat is not None else "GPS Unknown"),
+                date=capture_time.split(" ")[0] if capture_time and " " in capture_time else datetime.now().strftime("%Y-%m-%d"),
+                time=capture_time.split(" ")[1] if capture_time and " " in capture_time else datetime.now().strftime("%H:%M"),
+                species=suspected_animal or wildlife_res.get("primary_detected_species") or "wildlife",
+                notes=description or f"Evidence Submission #{submission_uuid}",
+                contact=contact_details or "Citizen Contributor",
+                is_authentic=decision["outcome"] == "CAMERA/CCTV EVIDENCE — VERIFIED",
+                image_path=saved_path.replace("\\", "/"),
+                status="pending"
+            )
+            db.add(comm_report)
+        except Exception as e:
+            print(f"[WARN] Failed to sync CommunityReport: {e}")
+    else:
+        # Rejected image retention policy: Delete the uploaded file and any temporary derivatives
+        try:
+            if os.path.exists(saved_path):
+                os.remove(saved_path)
+        except Exception as del_err:
+            print(f"[WARN] Failed to remove rejected file {saved_path}: {del_err}")
+
+    # Add audit log entry
+    audit_entry = models.EvidenceAuditLog(
+        submission_id=submission_uuid,
+        action="SUBMISSION_EVALUATED",
+        performed_by="SYSTEM",
+        details=f"Automated evaluation completed: {decision['outcome']}."
+    )
+    db.add(audit_entry)
+    db.commit()
+    db.refresh(submission)
+
+    return {
+        "success": True,
+        "submission_id": submission.submission_id,
+        "timestamp": submission.timestamp.isoformat(),
+        "decision": {
+            "outcome": decision["outcome"],
+            "explanation": decision["explanation"],
+            "flags": decision["flags"]
+        },
+        "metadata": {
+            "has_exif": metadata_res.get("has_exif"),
+            "camera": f"{metadata_res.get('camera_make', '')} {metadata_res.get('camera_model', '')}".strip() or "Not present",
+            "capture_timestamp": metadata_res.get("capture_timestamp") or "Not present",
+            "gps_coordinates": f"{metadata_res.get('gps_latitude')}, {metadata_res.get('gps_longitude')}" if metadata_res.get("gps_latitude") else "Not present",
+            "software": metadata_res.get("software_history") or []
+        },
+        "location_verification": {
+            "classification": location_res.get("classification"),
+            "explanation": location_res.get("explanation"),
+            "distance_km": location_res.get("distance_km")
+        },
+        "forensics": {
+            "verdict": forensics_res.get("verdict"),
+            "model_name": forensics_res.get("model_name"),
+            "limitations": forensics_res.get("limitations")
+        },
+        "duplicate_detection": {
+            "exact_matches_count": len(duplicate_res.get("exact_matches", [])),
+            "near_matches_count": len(duplicate_res.get("near_matches", []))
+        },
+        "wildlife_detection": {
+            "detected_species": wildlife_res.get("primary_detected_species"),
+            "confidence": wildlife_res.get("highest_confidence"),
+            "detections_count": len(wildlife_res.get("detections", []))
+        }
+    }
+
+@app.get("/api/evidence/{submission_id}")
+async def get_evidence_details(submission_id: str, db: Session = Depends(get_db)):
+    """Retrieves full verification details for a specific submission."""
+    sub = db.query(models.WildlifeEvidenceSubmission).filter(
+        models.WildlifeEvidenceSubmission.submission_id == submission_id
+    ).first()
+
+    if not sub:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    audit_logs = db.query(models.EvidenceAuditLog).filter(
+        models.EvidenceAuditLog.submission_id == submission_id
+    ).order_by(models.EvidenceAuditLog.timestamp.desc()).all()
+
+    return {
+        "submission_id": sub.submission_id,
+        "timestamp": sub.timestamp.isoformat() if sub.timestamp else None,
+        "file_name": sub.file_name,
+        "file_size_bytes": sub.file_size_bytes,
+        "mime_type": sub.mime_type,
+        "sha256_hash": sub.sha256_hash,
+        "phash": sub.phash,
+        "suspected_animal": sub.suspected_animal,
+        "source_type": sub.source_type,
+        "reported_location_name": sub.reported_location_name,
+        "reported_lat": sub.reported_lat,
+        "reported_lon": sub.reported_lon,
+        "reported_capture_time": sub.reported_capture_time,
+        "description": sub.description,
+        "decision_outcome": sub.decision_outcome,
+        "decision_explanation": sub.decision_explanation,
+        "flags": json.loads(sub.flags_json) if sub.flags_json else [],
+        "review_status": sub.review_status,
+        "reviewer_notes": sub.reviewer_notes,
+        "reviewed_by": sub.reviewed_by,
+        "reviewed_at": sub.reviewed_at.isoformat() if sub.reviewed_at else None,
+        "metadata": json.loads(sub.metadata_json) if sub.metadata_json else {},
+        "forensics": json.loads(sub.forensics_json) if sub.forensics_json else {},
+        "duplicate_analysis": json.loads(sub.duplicate_json) if sub.duplicate_json else {},
+        "location_verification": json.loads(sub.location_verification_json) if sub.location_verification_json else {},
+        "wildlife_detection": json.loads(sub.wildlife_detection_json) if sub.wildlife_detection_json else {},
+        "audit_logs": [
+            {
+                "action": log.action,
+                "performed_by": log.performed_by,
+                "details": log.details,
+                "timestamp": log.timestamp.isoformat() if log.timestamp else None
+            }
+            for log in audit_logs
+        ]
+    }
+
+@app.get("/api/evidence")
+async def list_evidence_submissions(
+    status: str = "ALL",
+    outcome: str = "ALL",
+    species: str = "ALL",
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """Retrieves list of evidence submissions with filtering options."""
+    query = db.query(models.WildlifeEvidenceSubmission)
+
+    if status != "ALL":
+        query = query.filter(models.WildlifeEvidenceSubmission.review_status == status)
+    if outcome != "ALL":
+        query = query.filter(models.WildlifeEvidenceSubmission.decision_outcome == outcome)
+    if species != "ALL":
+        query = query.filter(models.WildlifeEvidenceSubmission.suspected_animal == species)
+
+    submissions = query.order_by(models.WildlifeEvidenceSubmission.timestamp.desc()).limit(limit).all()
+
+    results = []
+    for s in submissions:
+        results.append({
+            "submission_id": s.submission_id,
+            "timestamp": s.timestamp.isoformat() if s.timestamp else None,
+            "file_name": s.file_name,
+            "suspected_animal": s.suspected_animal,
+            "source_type": s.source_type,
+            "decision_outcome": s.decision_outcome,
+            "review_status": s.review_status,
+            "location_classification": s.location_classification,
+            "flags": json.loads(s.flags_json) if s.flags_json else [],
+            "reported_location_name": s.reported_location_name
+        })
+
+    return results
+
+@app.post("/api/evidence/{submission_id}/review")
+async def review_evidence_submission(
+    submission_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: str = Depends(verify_admin)
+):
+    """Authority review endpoint for approving, rejecting, or updating review status."""
+    data = await request.json()
+    new_status = data.get("review_status")  # VERIFIED, REJECTED, UNDER_REVIEW, PENDING
+    notes = data.get("notes", "")
+
+    if new_status not in ["VERIFIED", "REJECTED", "UNDER_REVIEW", "PENDING"]:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Invalid review status.")
+
+    sub = db.query(models.WildlifeEvidenceSubmission).filter(
+        models.WildlifeEvidenceSubmission.submission_id == submission_id
+    ).first()
+
+    if not sub:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Submission not found.")
+
+    old_status = sub.review_status
+    sub.review_status = new_status
+    sub.reviewer_notes = notes
+    sub.reviewed_by = admin
+    sub.reviewed_at = datetime.now()
+
+    audit_entry = models.EvidenceAuditLog(
+        submission_id=submission_id,
+        action=f"STATUS_CHANGED_TO_{new_status}",
+        performed_by=admin,
+        details=f"Status changed from {old_status} to {new_status}. Notes: {notes}"
+    )
+    db.add(audit_entry)
+    db.commit()
+
+    return {
+        "success": True,
+        "submission_id": submission_id,
+        "review_status": new_status,
+        "reviewed_by": admin,
+        "timestamp": sub.reviewed_at.isoformat()
+    }
+
+@app.get("/api/evidence/{submission_id}/file")
+async def get_evidence_file(
+    submission_id: str,
+    db: Session = Depends(get_db)
+):
+    """Secure access-controlled endpoint to view uploaded evidence without exposing file paths."""
+    sub = db.query(models.WildlifeEvidenceSubmission).filter(
+        models.WildlifeEvidenceSubmission.submission_id == submission_id
+    ).first()
+
+    if not sub or not os.path.exists(sub.file_path):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+
+    return FileResponse(sub.file_path, media_type=sub.mime_type)
+
 @app.get("/incident-management", response_class=HTMLResponse)
+
 async def incident_management_page(admin: str = Depends(verify_admin)):
     with open("incident_management.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())

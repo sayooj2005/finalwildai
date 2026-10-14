@@ -322,12 +322,32 @@ class WildlifeIoTSystem:
             boxes = result.boxes
             if boxes is None: continue
             
-            detected_count += len(boxes)
-            
             for box in boxes:
                 confidence = float(box.conf[0])
                 cls = int(box.cls[0])
-                label = self.model.names[cls]
+                raw_label = self.model.names[cls].lower()
+                
+                # STRICT 4-CLASS FILTERING FOR WILDAI (Phase 2 Requirement)
+                # Map COCO classes to our 4 target classes for pretrained testing
+                detected_threat = None
+                if raw_label in ['person', 'human', 'poacher']:
+                    detected_threat = 'person'
+                elif raw_label == 'elephant':
+                    detected_threat = 'elephant'
+                elif raw_label in ['tiger', 'cat', 'dog', 'panther', 'leopard']: # Fallbacks for generic COCO tests
+                    detected_threat = 'tiger'
+                elif raw_label in ['wild_boar', 'bear', 'boar', 'cow', 'sheep']: # Fallbacks
+                    detected_threat = 'wild_boar'
+                    
+                # Ignore all other objects
+                if detected_threat is None:
+                    continue
+                    
+                detected_count += 1
+                
+                # We overwrite the raw class with our strict 4-class name
+                raw_class = detected_threat
+                label = detected_threat.capitalize()
                 
                 # Extract ByteTrack ID (if tracking is successful, otherwise fallback)
                 track_id = int(box.id[0]) if box.id is not None else int(time.time() * 1000) % 10000
@@ -339,8 +359,6 @@ class WildlifeIoTSystem:
                         config_data = json.load(f)
                 except:
                     config_data = {"temporal_persistence_frames": 3, "classes": {}, "categories": {}}
-
-                raw_class = label.lower()
                 cfg_class = config_data.get("classes", {}).get(raw_class, config_data.get("classes", {}).get("default", {"threshold": 0.5, "risk_weight": 10}))
                 
                 # Check confidence threshold for THIS class
@@ -559,6 +577,6 @@ class WildlifeIoTSystem:
         print("[SYSTEM] Monitoring Stopped.")
 
 if __name__ == "__main__":
-    iot_system = WildlifeIoTSystem(model_path='yolov8n.pt', capture_index=0)
+    iot_system = WildlifeIoTSystem(model_path='yolo11n.pt', capture_index=0)
     iot_system.run()
 
