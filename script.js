@@ -729,7 +729,10 @@ async function startLiveMonitoring() {
                                 streamImg.alt = 'Live Stream Active';
                             }
                         }
-                        
+
+                        // Update Real-Time Behavioral Analysis Dashboard & Event Timeline
+                        updateBehavioralDashboard(parsed);
+
                         // Handle Detections Array
                         if (parsed.detections && parsed.detections.length > 0) {
                             // Find primary threat (highest risk score)
@@ -1982,9 +1985,48 @@ function activateSOS() {
 
 
 
-function loadActiveAlerts() {
+async function loadActiveAlerts() {
   const alertsContainer = document.getElementById('alertsContainer');
   if (!alertsContainer) return;
+
+  try {
+    const res = await fetch('/api/event_alerts');
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        alertsContainer.innerHTML = data.slice(0, 8).map(alert => {
+          const type = (alert.risk_level || alert.alert_level || 'INFO').toLowerCase();
+          const speciesLower = (alert.species || '').toLowerCase();
+          let icon = '🐾';
+          if (speciesLower.includes('tiger')) icon = '🐅';
+          else if (speciesLower.includes('elephant')) icon = '🐘';
+          else if (speciesLower.includes('boar')) icon = '🐗';
+          else if (speciesLower.includes('leopard')) icon = '🐆';
+
+          const timeStr = alert.timestamp ? new Date(alert.timestamp).toLocaleTimeString() : 'Recent';
+          const reasonStr = alert.reason ? `<div style="font-size: 0.8rem; color: #64b5f6; margin-top: 2px;">⚡ ${alert.reason}</div>` : '';
+
+          return `
+            <div class="alert alert-danger-${type === 'critical' || type === 'high' ? 'high' : type === 'warning' || type === 'medium' ? 'medium' : 'low'}" style="margin-bottom: 8px;">
+              <span class="alert-icon">${icon}</span>
+              <div style="flex: 1;">
+                <strong>${(alert.species || 'Wildlife').toUpperCase()} #${alert.track_id || ''} Detected</strong><br>
+                <span style="font-size: 0.875rem;">📍 ${alert.location || 'Border Zone'}</span><br>
+                <span style="font-size: 0.875rem; opacity: 0.8;">🕐 ${timeStr}</span>
+                ${reasonStr}
+              </div>
+              <span class="badge badge-${type === 'critical' || type === 'high' ? 'danger' : type === 'warning' || type === 'medium' ? 'warning' : 'info'}">
+                ${(alert.risk_level || alert.alert_level || 'INFO').toUpperCase()}
+              </span>
+            </div>
+          `;
+        }).join('');
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("Could not load dynamic event alerts:", e);
+  }
 
   const mockAlerts = [
     {
@@ -3257,9 +3299,226 @@ function refreshEvacuationRoute() {
     calculateRealSafeRoute();
 }
 
-// Auto-initialize GIS maps on load
+// Auto-initialize GIS maps and Behavioral Event Feed on load
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(initGeospatialMaps, 800);
+    setTimeout(loadBehaviorEvents, 1200);
 });
+
+// ==============================================================================
+// REAL-TIME WILDLIFE BEHAVIORAL ANALYSIS & EVENT TIMELINE SYSTEM
+// ==============================================================================
+
+function updateBehavioralDashboard(data) {
+    if (!data) return;
+
+    const activeList = (data.active_behaviors && data.active_behaviors.length > 0)
+        ? data.active_behaviors
+        : (data.detections || []).map(d => ({
+            track_id: d.track_id,
+            animal: d.animal,
+            behavior: d.behavior || d.behaviour || 'standing',
+            risk_level: d.risk_level || (d.danger_level ? d.danger_level.toUpperCase() : 'LOW'),
+            speed: d.speed !== undefined ? d.speed : (d.velocity_px_sec || 0),
+            direction: d.movement_direction || d.movement_vector || 'stationary',
+            duration: d.duration !== undefined ? d.duration : 0,
+            confidence: d.behavior_confidence !== undefined ? d.behavior_confidence : (d.confidence || 0.8),
+            loitering: d.loitering || false
+        }));
+
+    // Update active tracked badge count
+    const countEl = document.getElementById('behavior-active-count');
+    if (countEl) {
+        countEl.textContent = `${activeList.length} TRACKED`;
+        countEl.className = activeList.length > 0 ? 'badge badge-warning' : 'badge badge-info';
+    }
+
+    // Update active tracked animal cards
+    const cardsContainer = document.getElementById('activeBehaviorCards');
+    if (cardsContainer) {
+        if (activeList.length === 0) {
+            cardsContainer.innerHTML = `
+                <div style="color: rgba(255,255,255,0.4); font-size: 0.85rem; text-align: center; padding: 25px 0;">
+                    No active animal tracks detected. Surveillance stream active.
+                </div>
+            `;
+        } else {
+            let html = '';
+            activeList.forEach(item => {
+                const risk = (item.risk_level || 'LOW').toUpperCase();
+                let riskBadgeClass = 'success';
+                let riskColor = '#4caf50';
+                if (risk === 'CRITICAL') {
+                    riskBadgeClass = 'danger';
+                    riskColor = '#f44336';
+                } else if (risk === 'HIGH') {
+                    riskBadgeClass = 'danger';
+                    riskColor = '#ff9800';
+                } else if (risk === 'MEDIUM') {
+                    riskBadgeClass = 'warning';
+                    riskColor = '#ffeb3b';
+                }
+
+                const confPercent = Math.round((item.confidence || 0.8) * 100);
+                const timeNow = new Date().toLocaleTimeString();
+                const animalDisplay = (item.animal || 'Animal').toUpperCase();
+                const behaviorDisplay = (item.behavior || 'standing').toUpperCase();
+                const dirDisplay = (item.direction || 'stationary').replace(/_/g, ' ').toUpperCase();
+
+                html += `
+                    <div class="behavior-track-card" style="background: rgba(20,24,30,0.85); border: 1px solid rgba(255,255,255,0.1); border-left: 5px solid ${riskColor}; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); transition: all 0.2s ease;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong style="color: #fff; font-size: 1.05rem; letter-spacing: 0.5px;">🐾 ${animalDisplay} #${item.track_id}</strong>
+                                <span style="color: rgba(255,255,255,0.7); font-size: 0.78rem; margin-left: 10px; background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px;">⏱️ ${item.duration}s</span>
+                                ${item.loitering ? '<span class="badge" style="background:#ab47bc; color:#fff; font-size:0.7rem; font-weight:700; margin-left:6px; padding: 2px 8px;">⚠️ LOITERING</span>' : ''}
+                            </div>
+                            <span class="badge badge-${riskBadgeClass}" style="font-size: 0.82rem; font-weight: 800; padding: 4px 10px;">${risk} RISK</span>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; font-size: 0.85rem;">
+                            <div style="background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 6px;"><span style="color: rgba(255,255,255,0.6); display: block; font-size: 0.7rem;">BEHAVIOR</span> <strong style="color: #64b5f6; font-size: 0.95rem;">${behaviorDisplay}</strong></div>
+                            <div style="background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 6px;"><span style="color: rgba(255,255,255,0.6); display: block; font-size: 0.7rem;">EST. SPEED</span> <strong style="color: #fff; font-size: 0.95rem;">${item.speed} px/s</strong></div>
+                            <div style="background: rgba(0,0,0,0.4); padding: 6px 10px; border-radius: 6px;"><span style="color: rgba(255,255,255,0.6); display: block; font-size: 0.7rem;">DIRECTION</span> <strong style="color: #fff; font-size: 0.95rem;">${dirDisplay}</strong></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 0.76rem; color: rgba(255,255,255,0.6); border-top: 1px solid rgba(255,255,255,0.08); padding-top: 6px;">
+                            <span>Behavior Confidence: <strong style="color:#00e676;">${confPercent}%</strong></span>
+                            <span>Last Detected: <strong>${timeNow}</strong></span>
+                        </div>
+                    </div>
+                `;
+            });
+            cardsContainer.innerHTML = html;
+        }
+    }
+
+    // Append confirmed behavioral events into the timeline feed
+    if (data.behavior_events && data.behavior_events.length > 0) {
+        data.behavior_events.forEach(ev => {
+            appendBehaviorEventToFeed(ev);
+        });
+    }
+}
+
+function appendBehaviorEventToFeed(ev) {
+    const feed = document.getElementById('behaviorEventFeed');
+    if (!feed) return;
+
+    // Clear placeholder text if present
+    if (feed.children.length === 1 && feed.children[0].textContent.includes('Awaiting')) {
+        feed.innerHTML = '';
+    }
+
+    const risk = (ev.risk_level || 'LOW').toUpperCase();
+    const timeStr = ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+    const animalName = (ev.animal || 'Animal').charAt(0).toUpperCase() + (ev.animal || 'Animal').slice(1);
+    const trackId = ev.track_id || 'ID';
+    const behavior = (ev.behavior || 'standing').toUpperCase();
+
+    let riskClass = 'risk-low';
+    let badgeColor = '#4caf50';
+    let textColor = '#000';
+    if (risk === 'CRITICAL') {
+        riskClass = 'risk-critical';
+        badgeColor = '#f44336';
+        textColor = '#fff';
+    } else if (risk === 'HIGH') {
+        riskClass = 'risk-high';
+        badgeColor = '#ff9800';
+        textColor = '#000';
+    } else if (risk === 'MEDIUM') {
+        riskClass = 'risk-medium';
+        badgeColor = '#ffeb3b';
+        textColor = '#000';
+    }
+
+    const item = document.createElement('div');
+    item.className = `behavior-event-item ${riskClass}`;
+    item.style.cssText = 'padding: 6px 10px; border-radius: 4px; background: rgba(255,255,255,0.04); margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center;';
+    item.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="color: rgba(255,255,255,0.5);">[${timeStr}]</span>
+            <strong style="color: #fff;">${animalName} #${trackId}</strong>
+            <span style="color: #64b5f6;">→ ${behavior}</span>
+        </div>
+        <span class="badge" style="background: ${badgeColor}; color: ${textColor}; font-weight: 700; font-size: 0.7rem; padding: 2px 7px; border-radius: 10px;">${risk}</span>
+    `;
+
+    feed.insertBefore(item, feed.firstChild);
+
+    // Limit feed to last 50 items
+    while (feed.children.length > 50) {
+        feed.removeChild(feed.lastChild);
+    }
+}
+
+async function loadBehaviorEvents() {
+    try {
+        const res = await fetch('/api/behavior/events?limit=25');
+        if (!res.ok) return;
+        const events = await res.json();
+        const feed = document.getElementById('behaviorEventFeed');
+        if (!feed) return;
+        if (events && events.length > 0) {
+            feed.innerHTML = '';
+            // Insert in chronological order
+            events.slice().reverse().forEach(ev => appendBehaviorEventToFeed(ev));
+        }
+    } catch (e) {
+        console.warn("Could not load behavioral events:", e);
+    }
+}
+
+async function openBehaviorConfigModal() {
+    const modal = document.getElementById('behaviorConfigModal');
+    if (!modal) return;
+    try {
+        const res = await fetch('/api/behavior/config');
+        if (res.ok) {
+            const cfg = await res.json();
+            if (document.getElementById('cfg_stationary')) document.getElementById('cfg_stationary').value = cfg.stationary_threshold || 20;
+            if (document.getElementById('cfg_walking')) document.getElementById('cfg_walking').value = cfg.walking_threshold || 75;
+            if (document.getElementById('cfg_running')) document.getElementById('cfg_running').value = cfg.running_threshold || 150;
+            if (document.getElementById('cfg_charging')) document.getElementById('cfg_charging').value = cfg.charging_speed_threshold || 160;
+            if (document.getElementById('cfg_loitering_dur')) document.getElementById('cfg_loitering_dur').value = cfg.loitering_duration || 5;
+            if (document.getElementById('cfg_resting_dur')) document.getElementById('cfg_resting_dur').value = cfg.resting_duration || 6;
+            if (document.getElementById('cfg_confirm_frames')) document.getElementById('cfg_confirm_frames').value = cfg.behavior_confirmation_frames || 3;
+            if (document.getElementById('cfg_risk_cooldown')) document.getElementById('cfg_risk_cooldown').value = cfg.risk_cooldown || 8;
+        }
+    } catch (e) {
+        console.error("Failed to load behavior config", e);
+    }
+    modal.classList.remove('hidden');
+}
+
+function closeBehaviorConfigModal() {
+    const modal = document.getElementById('behaviorConfigModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function saveBehaviorConfig() {
+    const payload = {
+        stationary_threshold: parseFloat(document.getElementById('cfg_stationary').value) || 20,
+        walking_threshold: parseFloat(document.getElementById('cfg_walking').value) || 75,
+        running_threshold: parseFloat(document.getElementById('cfg_running').value) || 150,
+        charging_speed_threshold: parseFloat(document.getElementById('cfg_charging').value) || 160,
+        loitering_duration: parseFloat(document.getElementById('cfg_loitering_dur').value) || 5,
+        resting_duration: parseFloat(document.getElementById('cfg_resting_dur').value) || 6,
+        behavior_confirmation_frames: parseInt(document.getElementById('cfg_confirm_frames').value) || 3,
+        risk_cooldown: parseFloat(document.getElementById('cfg_risk_cooldown').value) || 8
+    };
+
+    try {
+        const res = await fetch('/api/behavior/config', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        showNotification(data.message || 'Behavior config updated', 'success');
+        closeBehaviorConfigModal();
+    } catch (e) {
+        showNotification('Failed to update behavior config', 'error');
+    }
+}
 
 
