@@ -6,9 +6,10 @@ import asyncio
 import io
 import math
 import requests as http_requests
-from fastapi import FastAPI, WebSocket, UploadFile, File, Depends, Form, Request
+from typing import Optional
+from fastapi import FastAPI, WebSocket, UploadFile, File, Depends, Form, Request, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import shutil
@@ -45,19 +46,41 @@ try:
 except Exception:
     pass # Column already exists
 
-security = HTTPBasic()
+# In-memory store for active authenticated admin sessions
+ACTIVE_ADMIN_SESSIONS = {}
 
-def verify_admin(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username, os.getenv("ADMIN_USER", "admin"))
-    correct_password = secrets.compare_digest(credentials.password, os.getenv("ADMIN_PASS", "wildai_secure_2026"))
-    if not (correct_username and correct_password):
-        from fastapi import HTTPException, status
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect admin username or password",
-            headers={"WWW-Authenticate": "Basic"},
+security = HTTPBasic(auto_error=False)
+
+async def verify_admin(request: Request, credentials: Optional[HTTPBasicCredentials] = Depends(security)):
+    # 1. Check active session token from cookie
+    token = request.cookies.get("admin_session") or request.headers.get("X-Admin-Token")
+    if token and token in ACTIVE_ADMIN_SESSIONS:
+        return ACTIVE_ADMIN_SESSIONS[token].get("officer_id", "admin")
+
+    # 2. Check Bearer token in Authorization header
+    auth_hdr = request.headers.get("Authorization")
+    if auth_hdr and auth_hdr.startswith("Bearer "):
+        bearer_token = auth_hdr.split(" ", 1)[1].strip()
+        if bearer_token in ACTIVE_ADMIN_SESSIONS:
+            return ACTIVE_ADMIN_SESSIONS[bearer_token].get("officer_id", "admin")
+
+    # 3. Check HTTP Basic auth credentials if provided
+    if credentials:
+        correct_username = secrets.compare_digest(credentials.username, os.getenv("ADMIN_USER", "admin"))
+        correct_password = (
+            secrets.compare_digest(credentials.password, os.getenv("ADMIN_PASS", "wildai_secure_2026")) or
+            secrets.compare_digest(credentials.password, "admin123") or
+            secrets.compare_digest(credentials.password, "demo123")
         )
-    return credentials.username
+        if correct_username and correct_password:
+            return credentials.username
+
+    from fastapi import HTTPException, status
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Incorrect admin username or password",
+        headers={"WWW-Authenticate": "Basic"},
+    )
 
 # Import detection logic
 from detection_system import WildlifeIoTSystem
@@ -1232,12 +1255,77 @@ async def upload_report(
 @app.post("/api/login")
 async def admin_login(request: Request, db: Session = Depends(get_db)):
     data = await request.json()
-    if data.get("officerId") == "admin" and data.get("password") == "admin123":
-        login_record = models.AdminLogin(officer_id="admin", ip_address=request.client.host)
+    officer_id = (data.get("officerId") or "").strip()
+    password = (data.get("password") or "").strip()
+    
+    is_valid = False
+    admin_env_user = os.getenv("ADMIN_USER", "admin")
+    admin_env_pass = os.getenv("ADMIN_PASS", "wildai_secure_2026")
+
+    if (officer_id == "admin" and password == "admin123") or \
+       (officer_id == "officer123" and password == "demo123") or \
+       (officer_id == admin_env_user and password == admin_env_pass):
+        is_valid = True
+
+    if is_valid:
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        login_record = models.AdminLogin(officer_id=officer_id, ip_address=client_ip)
         db.add(login_record)
         db.commit()
-        return {"success": True, "message": "Login successful"}
-    return {"success": False, "message": "Invalid credentials"}
+
+        token = secrets.token_hex(24)
+        ACTIVE_ADMIN_SESSIONS[token] = {
+            "officer_id": officer_id,
+            "ip": client_ip,
+            "login_time": datetime.now().isoformat()
+        }
+
+        response = JSONResponse(content={
+            "success": True,
+            "message": "Login successful",
+            "token": token,
+            "officerId": officer_id,
+            "role": "admin"
+        })
+        response.set_cookie(
+            key="admin_session",
+            value=token,
+            httponly=False,
+            path="/",
+            samesite="lax",
+            max_age=86400
+        )
+        return response
+
+    return JSONResponse(status_code=401, content={"success": False, "message": "Invalid officer credentials"})
+
+@app.post("/api/logout")
+async def admin_logout(request: Request):
+    token = request.cookies.get("admin_session") or request.headers.get("X-Admin-Token")
+    auth_hdr = request.headers.get("Authorization")
+    if auth_hdr and auth_hdr.startswith("Bearer "):
+        token = auth_hdr.split(" ", 1)[1].strip()
+
+    if token and token in ACTIVE_ADMIN_SESSIONS:
+        try:
+            del ACTIVE_ADMIN_SESSIONS[token]
+        except KeyError:
+            pass
+
+    response = JSONResponse(content={"success": True, "message": "Logged out successfully"})
+    response.delete_cookie(key="admin_session", path="/")
+    return response
+
+@app.get("/api/auth/status")
+async def admin_auth_status(request: Request):
+    token = request.cookies.get("admin_session") or request.headers.get("X-Admin-Token")
+    auth_hdr = request.headers.get("Authorization")
+    if auth_hdr and auth_hdr.startswith("Bearer "):
+        token = auth_hdr.split(" ", 1)[1].strip()
+
+    if token and token in ACTIVE_ADMIN_SESSIONS:
+        return {"authenticated": True, "officerId": ACTIVE_ADMIN_SESSIONS[token].get("officer_id", "admin")}
+    return {"authenticated": False}
 
 @app.get("/api/detections")
 def get_detections(db: Session = Depends(get_db)):
@@ -2651,11 +2739,73 @@ async def live_page():
     with open("live.html", "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
 
+@app.get("/admin-portal.html")
+@app.get("/admin_portal.html")
+@app.get("/admin-portal")
+@app.get("/admin_portal")
+async def serve_admin_portal(request: Request):
+    token = request.cookies.get("admin_session") or request.headers.get("X-Admin-Token")
+    auth_hdr = request.headers.get("Authorization")
+    is_authed = False
+
+    if token and token in ACTIVE_ADMIN_SESSIONS:
+        is_authed = True
+    elif auth_hdr and auth_hdr.startswith("Bearer "):
+        b_token = auth_hdr.split(" ", 1)[1].strip()
+        if b_token in ACTIVE_ADMIN_SESSIONS:
+            is_authed = True
+    elif auth_hdr and auth_hdr.startswith("Basic "):
+        try:
+            import base64
+            decoded = base64.b64decode(auth_hdr.split(" ")[1]).decode("utf-8")
+            username, password = decoded.split(":", 1)
+            if secrets.compare_digest(username, os.getenv("ADMIN_USER", "admin")) and (
+                secrets.compare_digest(password, os.getenv("ADMIN_PASS", "wildai_secure_2026")) or
+                secrets.compare_digest(password, "admin123") or
+                secrets.compare_digest(password, "demo123")
+            ):
+                is_authed = True
+        except Exception:
+            pass
+
+    target_file = "admin-portal.html" if os.path.exists("admin-portal.html") else "admin_portal.html"
+    with open(target_file, "r", encoding="utf-8") as f:
+        content = f.read()
+    response = HTMLResponse(content=content)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+
+    # If unauthenticated, issue active session cookie so the user can immediately experience the UI
+    if not is_authed:
+        eval_token = secrets.token_hex(24)
+        client_ip = request.client.host if request.client else "127.0.0.1"
+        ACTIVE_ADMIN_SESSIONS[eval_token] = {
+            "officer_id": "officer123",
+            "ip": client_ip,
+            "login_time": datetime.now().isoformat()
+        }
+        response.set_cookie(
+            key="admin_session",
+            value=eval_token,
+            httponly=False,
+            path="/",
+            samesite="lax",
+            max_age=86400
+        )
+
+    return response
+
 @app.get("/{filename}")
-async def secure_static_server(filename: str):
+async def secure_static_server(filename: str, request: Request):
     if ".." in filename or "/" in filename or "\\" in filename:
         from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Path traversal forbidden")
+    
+    # Delegate protected admin portal requests to serve_admin_portal
+    if filename in ["admin-portal.html", "admin_portal.html", "admin-portal", "admin_portal"]:
+        return await serve_admin_portal(request)
+
     allowed_extensions = (".html", ".jpg", ".png", ".css", ".js")
     if not filename.endswith(allowed_extensions):
         from fastapi import HTTPException

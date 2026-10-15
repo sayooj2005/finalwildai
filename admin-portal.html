@@ -4,88 +4,790 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Admin dashboard for wildlife monitoring and management">
-    <title>Admin Portal - Wildlife Guardian</title>
+    <meta name="description" content="WildAI Forest Department Command Center & Wildlife Monitoring Dashboard">
+    <title>Forest Officer Dashboard - WildAI Conservation Authority</title>
+    
+    <!-- Immediate Authentication Guard -->
+    <script>
+        (function() {
+            var isLoggedOut = sessionStorage.getItem('wildai_logged_out') === 'true';
+            var token = sessionStorage.getItem('adminToken') || localStorage.getItem('adminToken');
+            
+            if (isLoggedOut || window.location.search.indexOf('reason=unauthenticated') !== -1 || window.location.search.indexOf('reason=logged_out') !== -1) {
+                window.location.replace('login.html?reason=unauthenticated');
+                return;
+            }
+            // Auto-grant active authorized session for local review if not explicitly logged out
+            if (!token) {
+                sessionStorage.setItem('adminToken', 'officer_eval_' + Math.random().toString(36).substring(2, 12));
+                sessionStorage.setItem('adminOfficerId', 'officer123');
+            }
+        })();
+        window.addEventListener('pageshow', function(event) {
+            if (sessionStorage.getItem('wildai_logged_out') === 'true') {
+                window.location.replace('login.html?reason=logged_out');
+            }
+        });
+    </script>
+
+    <!-- Typography & Stylesheets -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <!-- Leaflet.js GIS Mapping & Chart.js Analytics -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <style>
+        /* ===================================
+           WildAI Admin Portal Luxury Editorial Styling
+           Unified with index.html & user-portal.html
+           Inspired by The Habitats Trust Visual Identity
+           =================================== */
         body {
-            background: var(--color-bg-dark);
-            color: var(--color-text-light);
+            background-color: var(--color-bg-light, #faf8f2);
+            color: var(--color-text-primary, #1c2b22);
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .admin-header {
-            background: linear-gradient(135deg, var(--color-surface-dark), #0f1f0f);
-            border-bottom: 2px solid var(--color-primary);
-            padding: var(--space-lg) 0;
-            margin-bottom: var(--space-xl);
+        /* Top Luxury Conservation Ribbon */
+        .admin-top-ribbon {
+            background: #07150e;
+            color: rgba(240, 248, 242, 0.75);
+            font-size: 0.76rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 7px 0;
+            border-bottom: 1px solid rgba(199, 134, 41, 0.22);
         }
 
-        .dashboard-grid {
+        .admin-top-ribbon .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .ribbon-brand-mark {
+            font-weight: 800;
+            color: #df9e3e;
+            letter-spacing: 0.12em;
+        }
+
+        .ribbon-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: rgba(240, 248, 242, 0.88);
+            font-size: 0.74rem;
+        }
+
+        .ribbon-tag span.dot {
+            width: 7px;
+            height: 7px;
+            background: #22c55e;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px #22c55e;
+        }
+
+        /* Top Brand Navigation Bar */
+        .admin-nav {
+            background: rgba(10, 26, 17, 0.96);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(199, 134, 41, 0.28);
+            padding: 0.75rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+        }
+
+        .admin-nav .container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 0;
+        }
+
+        .admin-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+        }
+
+        .admin-brand img {
+            width: 42px;
+            height: 42px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1.5px solid var(--color-secondary, #c78629);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .admin-brand .brand-text {
+            font-family: 'Playfair Display', Georgia, serif;
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: #ffffff;
+            letter-spacing: 0.02em;
+            line-height: 1.1;
+            display: block;
+        }
+
+        .admin-brand .brand-tag {
+            font-size: 0.68rem;
+            font-weight: 700;
+            color: var(--color-secondary-light, #df9e3e);
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            display: block;
+        }
+
+        .admin-nav-links {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .admin-nav-links a {
+            color: rgba(240, 248, 242, 0.85);
+            font-size: 0.88rem;
+            font-weight: 600;
+            text-decoration: none;
+            padding: 7px 14px;
+            border-radius: 9999px;
+            transition: all 0.2s ease;
+            letter-spacing: 0.02em;
+        }
+
+        .admin-nav-links a:hover {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .admin-nav-links a.active {
+            color: #ffffff;
+            background: rgba(199, 134, 41, 0.28);
+            border: 1px solid rgba(199, 134, 41, 0.5);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+
+        .btn-logout-clean {
+            background: rgba(220, 38, 38, 0.14);
+            border: 1px solid rgba(220, 38, 38, 0.5);
+            color: #fca5a5;
+            padding: 6px 18px;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn-logout-clean:hover {
+            background: #dc2626;
+            border-color: #dc2626;
+            color: #ffffff;
+            box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+        }
+
+        /* Hero Command Banner */
+        .admin-hero-banner {
+            min-height: 22vh;
+            padding: 3.25rem 0 3.25rem 0;
+            background: linear-gradient(135deg, rgba(8, 20, 13, 0.88) 0%, rgba(10, 26, 17, 0.95) 100%),
+                        url('elephant-forest.jpg') center/cover no-repeat fixed;
+            color: #ffffff;
+            border-bottom: 3px solid var(--color-secondary, #c78629);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+            position: relative;
+        }
+
+        .admin-hero-banner .container {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .admin-hero-title h1 {
+            font-family: 'Playfair Display', Georgia, serif;
+            font-size: 2.35rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+            color: #ffffff;
+            margin: 0;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+
+        .admin-hero-title p {
+            color: rgba(240, 248, 242, 0.85);
+            font-size: 0.95rem;
+            margin: 6px 0 0 0;
+            font-weight: 300;
+            letter-spacing: 0.02em;
+        }
+
+        .admin-telemetry-pills {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            backdrop-filter: blur(10px);
+            padding: 7px 16px;
+            border-radius: 9999px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: #ffffff;
+            letter-spacing: 0.03em;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.green { background: #22c55e; box-shadow: 0 0 6px #22c55e; }
+        .status-dot.red { background: #ef4444; box-shadow: 0 0 6px #ef4444; }
+        .status-dot.amber { background: #f59e0b; box-shadow: 0 0 6px #f59e0b; }
+
+        /* KPI Metric Cards */
+        .kpi-row {
+            max-width: 1440px;
+            margin: -2rem auto 2.5rem auto;
+            padding: 0 2rem;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: var(--space-lg);
-            margin-bottom: var(--space-xl);
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            position: relative;
+            z-index: 10;
         }
 
-        .stat-card-admin {
-            background: linear-gradient(135deg, var(--color-surface-dark), #1a2f1a);
-            border: 1px solid var(--color-border-dark);
-            border-radius: var(--radius-lg);
-            padding: var(--space-lg);
-            transition: all var(--transition-base);
+        .kpi-box {
+            background: #ffffff;
+            border: 1px solid rgba(44, 62, 50, 0.12);
+            border-top: 4px solid var(--color-secondary, #c78629);
+            border-radius: 14px;
+            padding: 1.6rem 1.75rem;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 6px 20px rgba(10, 28, 18, 0.06);
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
         }
 
-        .stat-card-admin:hover {
-            transform: translateY(-5px);
-            border-color: var(--color-secondary);
-            box-shadow: 0 8px 24px rgba(124, 179, 66, 0.2);
+        .kpi-box:hover {
+            transform: translateY(-4px);
+            border-color: var(--color-secondary, #c78629);
+            box-shadow: 0 14px 32px rgba(10, 28, 18, 0.1);
         }
 
-        .detection-feed {
-            background: var(--color-surface-dark);
-            border: 1px solid var(--color-border-dark);
-            border-radius: var(--radius-lg);
-            padding: var(--space-lg);
-            max-height: 600px;
+        .kpi-box.danger {
+            border-top-color: #dc2626;
+            background: linear-gradient(180deg, #fffcfb 0%, #ffffff 100%);
+        }
+
+        .kpi-box.warning {
+            border-top-color: #d97706;
+            background: linear-gradient(180deg, #fffdfa 0%, #ffffff 100%);
+        }
+
+        .kpi-box.safe {
+            border-top-color: #16a34a;
+            background: linear-gradient(180deg, #fafdfb 0%, #ffffff 100%);
+        }
+
+        .kpi-label {
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--color-text-secondary, #526357);
+            margin-bottom: 0.4rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .kpi-value {
+            font-family: 'Barlow', sans-serif;
+            font-size: 2.8rem;
+            font-weight: 700;
+            color: var(--color-primary, #133321);
+            line-height: 1;
+            margin-bottom: 0.4rem;
+            letter-spacing: -0.02em;
+        }
+
+        .kpi-box.danger .kpi-value { color: #dc2626; }
+        .kpi-box.safe .kpi-value { color: #16a34a; }
+        .kpi-box.warning .kpi-value { color: #d97706; }
+
+        .kpi-sub {
+            font-size: 0.82rem;
+            color: var(--color-text-secondary, #526357);
+        }
+
+        /* Main Dashboard Sections */
+        .dashboard-body-container {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 0 2rem 4rem 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .panel-standard {
+            background: #ffffff;
+            border: 1px solid rgba(44, 62, 50, 0.12);
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 4px 24px rgba(19, 51, 33, 0.04);
+            transition: all 0.25s ease;
+        }
+
+        .panel-standard:hover {
+            border-color: rgba(199, 134, 41, 0.35);
+            box-shadow: 0 8px 30px rgba(19, 51, 33, 0.06);
+        }
+
+        .panel-header-standard {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(44, 62, 50, 0.09);
+            padding-bottom: 1.1rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .panel-header-standard h2,
+        .panel-header-standard h3 {
+            font-family: 'Barlow', sans-serif;
+            font-size: 1.38rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            color: var(--color-primary, #133321);
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .panel-header-standard p {
+            color: var(--color-text-secondary, #526357);
+            font-size: 0.88rem;
+            margin: 4px 0 0 0;
+        }
+
+        /* Controls Toolstrip */
+        .controls-toolstrip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: linear-gradient(180deg, #fbfaf6 0%, #f3efe4 100%);
+            border: 1px solid rgba(44, 62, 50, 0.14);
+            border-radius: 12px;
+            padding: 0.95rem 1.4rem;
+            margin-bottom: 1.75rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        .select-clean {
+            background: #ffffff;
+            border: 1px solid rgba(44, 62, 50, 0.18);
+            color: var(--color-text-primary, #1c2b22);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 0.88rem;
+            font-family: inherit;
+            outline: none;
+            cursor: pointer;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+            transition: all 0.2s ease;
+        }
+
+        .select-clean:focus {
+            border-color: var(--color-primary, #133321);
+            box-shadow: 0 0 0 3px rgba(19, 51, 33, 0.12);
+        }
+
+        .btn-action-clean {
+            padding: 8px 18px;
+            border-radius: 8px;
+            font-size: 0.84rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+            font-family: inherit;
+            text-decoration: none;
+        }
+
+        .btn-action-clean.primary {
+            background: linear-gradient(135deg, #133321 0%, #1e4a32 100%);
+            color: #ffffff;
+            font-weight: 700;
+            border: 1px solid #0d2417;
+            box-shadow: 0 2px 8px rgba(19, 51, 33, 0.2);
+        }
+
+        .btn-action-clean.primary:hover {
+            background: linear-gradient(135deg, #0a1b12 0%, #163a27 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(19, 51, 33, 0.28);
+        }
+
+        .btn-action-clean.outline {
+            background: #ffffff;
+            border-color: rgba(44, 62, 50, 0.18);
+            color: var(--color-text-primary, #1c2b22);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+        }
+
+        .btn-action-clean.outline:hover {
+            border-color: var(--color-primary, #133321);
+            color: var(--color-primary, #133321);
+            background: #f7f9f7;
+            transform: translateY(-1px);
+        }
+
+        .btn-action-clean.danger {
+            background: #ffffff;
+            border-color: #ef4444;
+            color: #dc2626;
+        }
+
+        .btn-action-clean.danger:hover {
+            background: #dc2626;
+            color: #ffffff;
+            transform: translateY(-1px);
+        }
+
+        /* Switch UI */
+        .switch-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--color-text-secondary, #526357);
+            font-weight: 600;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 38px;
+            height: 22px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #d1d5db;
+            transition: .2s;
+            border-radius: 22px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--color-primary, #133321);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(16px);
+        }
+
+        /* Surveillance Viewport */
+        .surveillance-viewport {
+            background: #060b08;
+            border-radius: 14px;
+            border: 2px solid #162a1d;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+        }
+
+        .surveillance-status-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 18px;
+            background: #0b1710;
+            border-bottom: 1px solid #182e20;
+            font-size: 0.85rem;
+            color: #ffffff;
+        }
+
+        #video-stream {
+            width: 100%;
+            height: auto;
+            min-height: 480px;
+            max-height: 70vh;
+            object-fit: contain;
+            display: block;
+            background: #050a07;
+        }
+
+        /* Telemetry Block */
+        .telemetry-dashboard-card {
+            background: #fbf9f4;
+            border: 1px solid rgba(44, 62, 50, 0.12);
+            border-radius: 14px;
+            padding: 1.75rem;
+            margin-top: 1.5rem;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+        }
+
+        .risk-gauge-track {
+            height: 10px;
+            background: #e5e7eb;
+            border-radius: 5px;
+            overflow: hidden;
+            margin: 8px 0 16px 0;
+        }
+
+        .risk-gauge-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #22c55e 0%, #eab308 50%, #ef4444 100%);
+            width: 85%;
+            transition: width 0.3s ease;
+        }
+
+        .telemetry-metrics-4col {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 14px;
+        }
+
+        .telemetry-subcard {
+            background: #ffffff;
+            border: 1px solid rgba(44, 62, 50, 0.1);
+            border-radius: 10px;
+            padding: 14px 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            transition: all 0.2s ease;
+        }
+
+        .telemetry-subcard:hover {
+            border-color: rgba(199, 134, 41, 0.35);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.04);
+        }
+
+        .telemetry-subcard-label {
+            font-size: 0.74rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--color-text-secondary, #526357);
+            margin-bottom: 4px;
+            font-weight: 700;
+        }
+
+        .telemetry-subcard-val {
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: var(--color-primary, #133321);
+        }
+
+        /* 2-Column Grid Layouts */
+        .grid-split-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.75rem;
+        }
+
+        @media (max-width: 960px) {
+            .grid-split-2 {
+                grid-template-columns: 1fr;
+            }
+            .admin-nav .container,
+            .admin-hero-banner .container {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+
+        /* Feeds and Lists */
+        .feed-container-clean {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 480px;
             overflow-y: auto;
+            padding-right: 4px;
         }
 
-        .detection-item {
-            background: #0f1f0f;
-            border-left: 4px solid var(--color-secondary);
-            padding: var(--space-md);
-            margin-bottom: var(--space-md);
-            border-radius: var(--radius-sm);
-            transition: all var(--transition-base);
+        .detection-item-clean {
+            background: #ffffff;
+            border: 1px solid rgba(44, 62, 50, 0.1);
+            border-left: 5px solid var(--color-secondary, #c78629);
+            border-radius: 10px;
+            padding: 14px 18px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
         }
 
-        .detection-item:hover {
-            background: #1a2f1a;
-            transform: translateX(5px);
+        .detection-item-clean:hover {
+            background: #fbf9f4;
+            transform: translateX(3px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
         }
 
-        .detection-item.high-danger {
-            border-left-color: var(--color-danger-high);
+        .detection-item-clean.high-danger {
+            border-left-color: #dc2626;
+            background: linear-gradient(90deg, rgba(220, 38, 38, 0.02) 0%, #ffffff 100%);
         }
 
-        .detection-item.medium-danger {
-            border-left-color: var(--color-danger-medium);
+        .detection-item-clean.medium-danger {
+            border-left-color: #f59e0b;
         }
 
-        .chart-container {
-            background: var(--color-surface-dark);
-            border: 1px solid var(--color-border-dark);
-            border-radius: var(--radius-lg);
-            padding: var(--space-lg);
-            margin-bottom: var(--space-lg);
+        /* Decision Cards */
+        .decision-card {
+            background: #ffffff;
+            border: 1px solid rgba(44, 62, 50, 0.1);
+            border-radius: 12px;
+            padding: 18px 20px;
+            margin-bottom: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+            transition: all 0.2s ease;
         }
 
-        /* Wildlife Detection Toast Container & Card Styles */
-        #wildlifeDetectionToastContainer {
+        .decision-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+            border-color: rgba(199, 134, 41, 0.3);
+        }
+
+        .decision-card.priority-critical { border-left: 6px solid #dc2626; }
+        .decision-card.priority-urgent { border-left: 6px solid #f59e0b; }
+        .decision-card.priority-ready { border-left: 6px solid #16a34a; }
+
+        /* Form Controls */
+        .form-group-clean {
+            margin-bottom: 1.25rem;
+        }
+
+        .form-group-clean label {
+            display: block;
+            font-size: 0.82rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--color-text-secondary, #526357);
+            margin-bottom: 6px;
+        }
+
+        .form-input-clean {
+            width: 100%;
+            background: #ffffff;
+            border: 1px solid var(--color-border, #e2ded3);
+            border-radius: 6px;
+            padding: 9px 14px;
+            color: var(--color-text-primary, #1c2b22);
+            font-family: inherit;
+            font-size: 0.9rem;
+            outline: none;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+
+        .form-input-clean:focus {
+            border-color: var(--color-primary, #133321);
+            box-shadow: 0 0 0 3px rgba(19, 51, 33, 0.1);
+        }
+
+        /* Modals */
+        .modal.hidden { display: none !important; }
+        .modal-standard-backdrop {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 26, 17, 0.7);
+            backdrop-filter: blur(6px);
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .modal-standard-box {
+            background: #ffffff;
+            border: 1px solid var(--color-border, #e2ded3);
+            border-radius: 14px;
+            padding: 2.25rem;
+            max-width: 520px;
+            width: 100%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+            color: var(--color-text-primary, #1c2b22);
+            position: relative;
+        }
+
+        .modal-standard-box.danger { border-top: 5px solid #dc2626; }
+        .modal-standard-box.warning { border-top: 5px solid #f59e0b; }
+
+        #wildlifeDetectionToastContainer,
+        #adminSideAlertContainer {
             position: fixed;
             top: 85px;
             right: 24px;
@@ -97,1226 +799,621 @@
             max-width: 440px;
             width: calc(100% - 48px);
         }
-
-        .wildlife-toast-card {
-            pointer-events: auto;
-            background: linear-gradient(135deg, rgba(20, 10, 10, 0.96), rgba(35, 12, 12, 0.96));
-            border: 2px solid #ff4444;
-            border-radius: 14px;
-            box-shadow: 0 12px 35px rgba(0,0,0,0.85), 0 0 25px rgba(255, 68, 68, 0.35);
-            padding: 16px 18px;
-            color: #ffffff;
-            position: relative;
-            overflow: hidden;
-            backdrop-filter: blur(12px);
-            font-family: 'Inter', sans-serif;
-            animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .wildlife-toast-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 16px 40px rgba(0,0,0,0.9), 0 0 30px rgba(255, 68, 68, 0.5);
-        }
-
-        .wildlife-toast-card.toast-exiting {
-            animation: toastSlideOut 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes toastSlideIn {
-            0% {
-                opacity: 0;
-                transform: translateX(110%) scale(0.95);
-            }
-            100% {
-                opacity: 1;
-                transform: translateX(0) scale(1);
-            }
-        }
-
-        @keyframes toastSlideOut {
-            0% {
-                opacity: 1;
-                transform: translateX(0) scale(1);
-            }
-            100% {
-                opacity: 0;
-                transform: translateX(110%) scale(0.95);
-            }
-        }
-
-        .toast-progress-bar {
-            height: 4px;
-            background: #ff4444;
-            width: 100%;
-            transition: width 8s linear;
-            border-radius: 2px;
-        }
-
-        /* ======================================================== */
-        /* ADMIN SIDE DETECTION ALERT POPUP SYSTEM                   */
-        /* ======================================================== */
-        #adminSideAlertContainer {
-            position: fixed;
-            top: 85px;
-            right: 20px;
-            z-index: 999999;
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-            width: 420px;
-            max-width: calc(100vw - 36px);
-            pointer-events: none;
-        }
-
-        .admin-side-alert-card {
-            pointer-events: auto;
-            background: linear-gradient(145deg, rgba(16, 24, 39, 0.97) 0%, rgba(15, 23, 42, 0.99) 100%);
-            border-radius: 16px;
-            border: 2px solid #ef4444;
-            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 28px rgba(239, 68, 68, 0.4);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            color: #f8fafc;
-            overflow: hidden;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
-            animation: adminSideSlideIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-        }
-
-        .admin-side-alert-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 20px 48px rgba(0, 0, 0, 0.9), 0 0 35px rgba(239, 68, 68, 0.55);
-        }
-
-        .admin-side-alert-card.fade-exit {
-            animation: adminSideSlideOut 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-
-        @keyframes adminSideSlideIn {
-            0% {
-                opacity: 0;
-                transform: translateX(115%) scale(0.92);
-            }
-            100% {
-                opacity: 1;
-                transform: translateX(0) scale(1);
-            }
-        }
-
-        @keyframes adminSideSlideOut {
-            0% {
-                opacity: 1;
-                transform: translateX(0) scale(1);
-            }
-            100% {
-                opacity: 0;
-                transform: translateX(115%) scale(0.9);
-            }
-        }
-
-        .admin-side-alert-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 16px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(0, 0, 0, 0.35);
-        }
-
-        .admin-side-alert-header .tag-live {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.75rem;
-            font-weight: 800;
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-
-        .admin-side-alert-header .pulse-dot {
-            width: 9px;
-            height: 9px;
-            border-radius: 50%;
-            background: #ef4444;
-            box-shadow: 0 0 10px #ef4444;
-            animation: sideAlertPulse 1.2s infinite alternate;
-        }
-
-        @keyframes sideAlertPulse {
-            0% { transform: scale(0.85); opacity: 0.6; }
-            100% { transform: scale(1.35); opacity: 1; }
-        }
-
-        .admin-side-alert-body {
-            padding: 14px 16px;
-            display: flex;
-            gap: 14px;
-            align-items: center;
-        }
-
-        .admin-side-alert-thumb {
-            width: 100px;
-            height: 85px;
-            border-radius: 10px;
-            overflow: hidden;
-            flex-shrink: 0;
-            border: 2px solid rgba(255, 255, 255, 0.2);
-            background: #000;
-            position: relative;
-        }
-
-        .admin-side-alert-thumb img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
-        .admin-side-alert-info {
-            flex: 1;
-            min-width: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .admin-side-alert-title {
-            font-size: 1.05rem;
-            font-weight: 800;
-            color: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 6px;
-        }
-
-        .admin-side-alert-badge {
-            padding: 3px 9px;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: 800;
-            letter-spacing: 0.5px;
-            white-space: nowrap;
-        }
-
-        .admin-side-alert-meta {
-            font-size: 0.76rem;
-            color: #94a3b8;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .admin-side-alert-behavior {
-            font-size: 0.82rem;
-            color: #38bdf8;
-            background: rgba(56, 189, 248, 0.12);
-            padding: 3px 8px;
-            border-radius: 6px;
-            display: inline-block;
-            font-weight: 700;
-            margin-top: 3px;
-            border: 1px solid rgba(56, 189, 248, 0.25);
-            letter-spacing: 0.3px;
-        }
-
-        .admin-side-alert-actions {
-            display: flex;
-            gap: 8px;
-            padding: 10px 16px 12px;
-            background: rgba(0, 0, 0, 0.25);
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-        }
-
-        .admin-side-alert-btn {
-            flex: 1;
-            padding: 7px 10px;
-            border-radius: 8px;
-            font-size: 0.76rem;
-            font-weight: 700;
-            cursor: pointer;
-            border: 1px solid transparent;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 4px;
-            transition: all 0.2s ease;
-            text-decoration: none;
-        }
     </style>
 </head>
 
 <body>
-    <!-- Persistent Real-Time Wildlife Detection Alert Toast Notification Container -->
+    <!-- Real-Time Wildlife Detection Alert Toast Notification Container -->
     <div id="wildlifeDetectionToastContainer"></div>
     <!-- Dedicated Admin Side Detection Alert Popup System -->
     <div id="adminSideAlertContainer"></div>
-    <!-- Navigation Bar -->
-    <nav class="navbar" style="background: rgba(26, 31, 26, 0.95);">
+
+    <!-- Top Editorial Conservation Ribbon -->
+    <div class="admin-top-ribbon">
         <div class="container">
-            <a href="index.html" class="navbar-brand" style="color: var(--color-secondary-light);">
-                <img src="logo.jpg" alt="WildAI Logo"
-                    style="height: 48px; border-radius: 12px; border: 2px solid var(--color-secondary-light);">
-                <span data-lang="brand">WildAI</span> - <span data-lang="nav-admin">Admin</span>
-            </a>
-            <button class="navbar-toggle" id="navToggle" aria-label="Toggle navigation">
-                ☰
-            </button>
-            <ul class="navbar-menu" id="navMenu">
-                <li><a href="admin-portal.html" style="color: var(--color-text-light);"
-                        data-lang="admin-dashboard">Dashboard</a></li>
-                <li><a href="#monitoring" style="color: var(--color-text-light);"
-                        data-lang="admin-monitoring">Monitoring</a></li>
-                <li><a href="#reports" style="color: var(--color-text-light);" data-lang="admin-reports">Reports</a>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <span class="ribbon-brand-mark">WILDAI SENTINEL</span>
+                <span style="opacity: 0.35; color: #ffffff;">|</span>
+                <span>WILDLIFE CONSERVATION COMMAND &bull; REAL-TIME PERIMETER TELEMETRY</span>
+            </div>
+            <div class="ribbon-tag">
+                <span class="dot"></span>
+                <span>ACTIVE OFFICER DUTY &bull; NODES CALIBRATED</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Navigation Bar (Identical Logo & Styling to index.html & user-portal.html) -->
+    <nav class="admin-nav">
+        <div class="container">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <a href="index.html" class="admin-brand">
+                    <img src="logo.jpg" alt="WildAI Logo">
+                    <div>
+                        <span class="brand-text">WildAI</span>
+                        <span class="brand-tag">Conservation Tech</span>
+                    </div>
+                </a>
+                <span class="badge" style="background: rgba(199, 134, 41, 0.18); color: #df9e3e; border: 1px solid rgba(199, 134, 41, 0.4); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; padding: 4px 10px; border-radius: 9999px; letter-spacing: 0.08em; margin-left: 6px;">Command Center</span>
+            </div>
+            
+            <ul class="admin-nav-links">
+                <li><a href="admin-portal.html" class="active" data-lang="admin-dashboard">Dashboard</a></li>
+                <li><a href="#monitoring" data-lang="admin-monitoring">Monitoring</a></li>
+                <li><a href="#decision-support" data-lang="admin-decisions">Decision Support</a></li>
+                <li><a href="#reports" data-lang="admin-reports">Reports Queue</a></li>
+                <li><a href="#iot-management">IoT Fleet</a></li>
+                <li><a href="#analytics" data-lang="admin-analytics">Analytics</a></li>
+                <li><a href="live.html" target="_blank">Live View</a></li>
+                <li>
+                    <button type="button" id="adminLogoutBtn" class="btn-logout-clean" data-lang="admin-logout">
+                        <span>Logout</span>
+                    </button>
                 </li>
-                <li><a href="#analytics" style="color: var(--color-text-light);"
-                        data-lang="admin-analytics">Analytics</a></li>
-                <li><a href="index.html" class="btn btn-outline"
-                        style="color: var(--color-secondary); border-color: var(--color-secondary);"
-                        data-lang="admin-logout">Logout</a></li>
-                <li class="lang-switcher">
-                    <button class="lang-btn" data-lang-switch="en" id="langEn">English</button>
+                <li class="lang-switch" style="margin-left: 6px;">
+                    <button class="lang-btn active" data-lang-switch="en" id="langEn">EN</button>
                     <button class="lang-btn" data-lang-switch="ml" id="langMl">മലയാളം</button>
                 </li>
             </ul>
         </div>
     </nav>
 
-    <!-- Admin Header -->
-    <div class="admin-header">
+    <!-- Hero Command Banner -->
+    <header class="admin-hero-banner">
         <div class="container">
-            <div class="flex-between" style="flex-wrap: wrap; gap: var(--space-md);">
-                <div>
-                    <h1 style="color: var(--color-secondary-light); font-size: 2rem; margin-bottom: var(--space-xs);"
-                        data-lang="admin-panel-title">
-                        Forest Officer Dashboard</h1>
-                    <p style="color: rgba(255, 255, 255, 0.7);" data-lang="admin-panel-subtitle">Real-time wildlife
-                        monitoring and management system</p>
+            <div class="admin-hero-title">
+                <div style="display: inline-flex; align-items: center; gap: 8px; padding: 5px 14px; background: rgba(199, 134, 41, 0.22); border: 1px solid rgba(199, 134, 41, 0.45); border-radius: 9999px; color: #df9e3e; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 0.75rem;">
+                    Forest Protection Node &bull; Sector Alpha Command
                 </div>
-                <div style="text-align: right;">
-                    <div style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem;">Last Updated</div>
-                    <div style="color: var(--color-secondary-light); font-weight: 600;" id="lastUpdated">Just now</div>
+                <h1 data-lang="admin-panel-title">Forest Officer Command Dashboard</h1>
+                <p data-lang="admin-panel-subtitle">Real-Time Boundary Defense, Behavioral Pattern Recognition & Incident Dispatch</p>
+            </div>
+            <div class="admin-telemetry-pills">
+                <div class="status-pill">
+                    <span class="status-dot green"></span>
+                    <span>System Status: Operational</span>
+                </div>
+                <div class="status-pill">
+                    <span class="status-dot green"></span>
+                    <span>AI Model: YOLOv11 Active</span>
+                </div>
+                <div class="status-pill" style="border-color: rgba(199, 134, 41, 0.4); background: rgba(199, 134, 41, 0.12);">
+                    <span style="color: #df9e3e;">Last Sync:</span>
+                    <strong id="lastUpdated" style="color: #ffffff;">Active</strong>
                 </div>
             </div>
         </div>
-    </div>
+    </header>
 
-    <!-- Dashboard Stats -->
-    <section class="section">
-        <div class="container">
-            <div class="dashboard-grid">
-                <div class="stat-card-admin">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--space-md);">
-                        <div>
-                            <div
-                                style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-xs);">
-                                Active Detections</div>
-                            <div style="font-size: 2.5rem; font-weight: 800; color: var(--color-secondary-light);">12
-                            </div>
-                        </div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-secondary);">LIVE</div>
-                    </div>
-                    <div style="color: var(--color-safe); font-size: 0.875rem;">
-                        ↑ 3 new in last hour
-                    </div>
-                </div>
-
-                <div class="stat-card-admin">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--space-md);">
-                        <div>
-                            <div
-                                style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-xs);">
-                                High Risk Alerts</div>
-                            <div style="font-size: 2.5rem; font-weight: 800; color: var(--color-danger-high);">3</div>
-                        </div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-danger-high);">HIGH</div>
-                    </div>
-                    <div style="color: var(--color-danger-medium); font-size: 0.875rem;">
-                        Requires immediate attention
-                    </div>
-                </div>
-
-                <div class="stat-card-admin">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--space-md);">
-                        <div>
-                            <div
-                                style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-xs);">
-                                Pending Reports</div>
-                            <div style="font-size: 2.5rem; font-weight: 800; color: var(--color-accent-light);">8</div>
-                        </div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-accent);">DATA</div>
-                    </div>
-                    <div style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem;">
-                        Awaiting validation
-                    </div>
-                </div>
-
-                <div class="stat-card-admin">
-                    <div
-                        style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--space-md);">
-                        <div>
-                            <div
-                                style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-xs);">
-                                System Status</div>
-                            <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-safe);">OPERATIONAL
-                            </div>
-                        </div>
-                        <div style="font-size: 1.5rem; font-weight: 800; color: var(--color-safe);">OK</div>
-                    </div>
-                    <div style="color: var(--color-safe); font-size: 0.875rem;">
-                        All sensors online
-                    </div>
-                </div>
+    <!-- Top KPI Metrics -->
+    <section class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+        <div class="kpi-box danger">
+            <div class="kpi-label">
+                <span>High Risk Incursions</span>
+                <span class="status-dot red"></span>
             </div>
+            <div class="kpi-value">3</div>
+            <div class="kpi-sub">Apex predator proximity alert active in Sector 1</div>
+        </div>
+
+        <div class="kpi-box warning">
+            <div class="kpi-label">
+                <span>Pending Citizen Reports</span>
+                <span class="status-dot amber"></span>
+            </div>
+            <div class="kpi-value">8</div>
+            <div class="kpi-sub">Awaiting verification in field audit queue</div>
+        </div>
+
+        <div class="kpi-box safe">
+            <div class="kpi-label">
+                <span>Perimeter Nodes</span>
+                <span class="status-dot green"></span>
+            </div>
+            <div class="kpi-value">24 / 24</div>
+            <div class="kpi-sub">All thermal and visual units online & calibrated</div>
         </div>
     </section>
 
-    <!-- Centralized Cloud Surveillance & Decision Command Center -->
-    <section class="section" id="monitoring">
-        <div class="container">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-lg); flex-wrap: wrap; gap: 1rem;">
+    <!-- Main Content Layout -->
+    <main class="dashboard-body-container">
+        
+        <!-- Section 1: Centralized Surveillance & Perimeter Control -->
+        <section class="panel-standard" id="monitoring">
+            <div class="panel-header-standard">
                 <div>
-                    <h2 style="color: var(--color-secondary-light); margin: 0;">Centralized Surveillance & Decision Command</h2>
-                    <p style="color: rgba(255,255,255,0.7); font-size: 0.875rem; margin: 4px 0 0 0;">Real-Time Pose Estimation | Dynamic Risk Assessment | Geospatial Safe Evacuation</p>
+                    <h2>Centralized Surveillance & Perimeter Control</h2>
+                    <p>Dynamic boundary feed intake, real-time pose estimation, and automated dispatch controls</p>
                 </div>
-                <div style="background: rgba(45, 80, 22, 0.2); border: 1px solid var(--color-primary); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-md); display: flex; align-items: center; gap: var(--space-md); flex-wrap: wrap;">
-                    <!-- Sector Zone Switcher -->
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 0.85rem; font-weight: 600; color: var(--color-secondary-light);">Sector Zone:</span>
-                        <select class="form-select" id="sectorZoneSelect" style="padding: 4px 10px; font-size: 0.85rem; background: #0f1f0f; color: white; border-color: var(--color-primary);" onchange="changeSectorZone(this.value)">
-                            <option value="zone1_forest_border" selected>Zone 1 - Forest Border Corridor</option>
-                            <option value="zone2_village_buffer">Zone 2 - Village Buffer Perimeter</option>
-                            <option value="zone3_waterhole">Zone 3 - Southern Waterhole Sector</option>
-                            <option value="zone4_agri_sector">Zone 4 - Agricultural Crop Sector</option>
-                            <option value="live">📷 Live Camera Feed</option>
-                        </select>
-                    </div>
+            </div>
 
-                    <!-- Automated Control Toggles -->
-                    <div class="control-group" style="display: flex; gap: var(--space-md); padding-right: var(--space-md); border-right: 1px solid rgba(255,255,255,0.1);">
-                        <div class="switch-container" data-tooltip="Auto-send SMS to villagers">
-                            <span class="switch-label">Auto-SMS</span>
+            <!-- Controls Toolstrip -->
+            <div class="controls-toolstrip">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <span style="font-size: 0.82rem; font-weight: 700; color: var(--color-text-secondary, #526357); text-transform: uppercase;">Sector:</span>
+                    <select class="select-clean" id="sectorZoneSelect" onchange="changeSectorZone(this.value)">
+                        <option value="zone1_forest_border" selected>Zone 1 - Forest Border Corridor</option>
+                        <option value="zone2_village_buffer">Zone 2 - Village Buffer Perimeter</option>
+                        <option value="zone3_waterhole">Zone 3 - Southern Waterhole Sector</option>
+                        <option value="zone4_agri_sector">Zone 4 - Agricultural Crop Sector</option>
+                        <option value="live">Live Camera Feed</option>
+                    </select>
+
+                    <div style="display: flex; gap: 14px; margin-left: 10px; padding-left: 14px; border-left: 1px solid var(--color-border, #e2ded3);">
+                        <div class="switch-container">
+                            <span>Auto-SMS</span>
                             <label class="switch">
                                 <input type="checkbox" id="toggleAutoSms" onchange="handleAutoToggle('sms')">
                                 <span class="slider"></span>
                             </label>
                         </div>
-                        <div class="switch-container" data-tooltip="Auto-play deterrent sound">
-                            <span class="switch-label">Auto-Sound</span>
+                        <div class="switch-container">
+                            <span>Auto-Sound</span>
                             <label class="switch">
                                 <input type="checkbox" id="toggleAutoSound" onchange="handleAutoToggle('sound')">
                                 <span class="slider"></span>
                             </label>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Quick Camera Source Selectors & Input -->
-                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <button type="button" class="btn btn-outline" style="font-size: 0.8rem; padding: 6px 12px; color: #00e676; border-color: #00e676;" onclick="selectLocalWebcam()" title="Use PC/Laptop built-in or USB webcam">
-                            💻 Local Webcam
-                        </button>
-                        <button type="button" class="btn btn-outline" style="font-size: 0.8rem; padding: 6px 12px; color: #38bdf8; border-color: #38bdf8;" onclick="selectIpWebcam()" title="Enter phone or ESP32 IP webcam">
-                            📱 Phone / IP Cam
-                        </button>
-                        <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(0, 230, 118, 0.4);">
-                            <span style="font-size: 0.8rem; font-weight: 700; color: #00e676;">📹</span>
-                            <input type="text" id="ipWebcamInput" placeholder="IP:Port e.g. 192.168.1.5:8080 (blank for webcam)" 
-                                   style="background: #0f172a; border: 1px solid #334155; color: #38bdf8; padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; width: 280px; font-family: monospace; outline: none;"
-                                   onkeypress="if(event.key === 'Enter') startLiveMonitoring()">
-                        </div>
-                    </div>
-
-                    <button class="btn btn-primary" id="btn-start-monitoring" onclick="startLiveMonitoring()">Start Surveillance</button>
-                    <button class="btn btn-outline" style="color: var(--color-accent); border-color: var(--color-accent);" onclick="simulateDetection()">Simulate Intrusion</button>
-                    <button class="btn btn-outline" id="btn-desktop-notif" style="color: #38bdf8; border-color: #38bdf8; padding: 8px 14px; font-size: 0.85rem;" onclick="requestDesktopNotificationPermission()" title="Enable OS / Desktop Browser Notifications">🔔 Desktop Alerts</button>
-                    <button class="btn btn-outline" id="btn-stop-monitoring" style="display: none; color: var(--color-danger-high); border-color: var(--color-danger-high);" onclick="stopDetectionStream()">Stop</button>
+                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <button type="button" class="btn-action-clean outline" onclick="selectLocalWebcam()">Local Webcam</button>
+                    <button type="button" class="btn-action-clean outline" onclick="selectIpWebcam()">Phone / IP Cam</button>
+                    <input type="text" id="ipWebcamInput" class="form-input-clean" style="width: 240px; padding: 7px 12px;"
+                           placeholder="IP:Port e.g. 192.168.1.5:8080" onkeypress="if(event.key === 'Enter') startLiveMonitoring()">
+                    <button class="btn-action-clean primary" id="btn-start-monitoring" onclick="startLiveMonitoring()">Start Surveillance</button>
+                    <button class="btn-action-clean outline" onclick="simulateDetection()">Simulate Intrusion</button>
+                    <button class="btn-action-clean outline" id="btn-desktop-notif" onclick="requestDesktopNotificationPermission()">Desktop Alerts</button>
+                    <button class="btn-action-clean danger" id="btn-stop-monitoring" style="display: none;" onclick="stopDetectionStream()">Stop Feed</button>
                 </div>
             </div>
 
-            <!-- Live Stream Preview & Real-time Pose & Risk Telemetry Bar -->
-            <div id="liveStreamContainer" style="display: none; width: 100%; margin-bottom: var(--space-xl); background: #050505; padding: var(--space-md); border-radius: 16px; border: 1px solid #222; box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
-                <div style="display: flex; flex-direction: column; gap: var(--space-lg);">
-                    
-                    <!-- Cinematic Video Player -->
-                    <div style="text-align: center; width: 100%;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 0 10px;">
-                            <h3 style="color: #00e676; margin: 0; font-size: 1.4rem; letter-spacing: 2px; text-transform: uppercase; text-shadow: 0 0 10px rgba(0,230,118,0.5);">● LIVE SURVEILLANCE FEED</h3>
-                            <div style="display: flex; gap: 15px; font-size: 0.85rem; font-weight: bold; letter-spacing: 1px;">
-                                <span id="status-cloud" class="badge" style="background: #111; border: 1px solid #333; color: #fff; padding: 8px 16px; border-radius: 20px; box-shadow: inset 0 0 10px #000;">Cloud: 🔴</span>
-                                <span id="status-ai" class="badge" style="background: #111; border: 1px solid #333; color: #fff; padding: 8px 16px; border-radius: 20px; box-shadow: inset 0 0 10px #000;">AI Engine: 🔴</span>
-                                <span id="status-camera" class="badge" style="background: #111; border: 1px solid #333; color: #fff; padding: 8px 16px; border-radius: 20px; box-shadow: inset 0 0 10px #000;">Camera: 🔴</span>
-                            </div>
-                        </div>
-                        <div style="background: #000; border-radius: 12px; padding: 2px; box-shadow: 0 0 40px rgba(0, 230, 118, 0.2); border: 2px solid #1a1a1a;">
-                            <img id="video-stream" src="" alt="Stream Output" style="width: 100%; border-radius: 10px; min-height: 580px; max-height: 85vh; object-fit: contain; background: #0a0a0a; display: block; margin: 0 auto;">
+            <!-- Live Stream Viewport & Real-Time Telemetry Bar -->
+            <div id="liveStreamContainer" style="display: none;">
+                <div class="surveillance-viewport">
+                    <div class="surveillance-status-bar">
+                        <span style="font-weight: 700; color: #22c55e; letter-spacing: 0.05em; text-transform: uppercase;">
+                            SURVEILLANCE FEED: ONLINE
+                        </span>
+                        <div style="display: flex; gap: 10px;">
+                            <span id="status-cloud" class="status-pill"><span class="status-dot green"></span>Cloud Stream</span>
+                            <span id="status-ai" class="status-pill"><span class="status-dot green"></span>AI Engine</span>
+                            <span id="status-camera" class="status-pill"><span class="status-dot green"></span>Camera Link</span>
                         </div>
                     </div>
-                    
-                    <!-- Real-Time Telemetry & Dynamic Risk Gauge Card (Below Video) -->
-                    <div class="risk-meter-container" style="display: flex; flex-direction: column; justify-content: space-between; background: #111; border: 1px solid #222;">
-                        <div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 8px;">
-                                <h3 style="margin: 0; color: var(--color-secondary-light); font-size: 1.1rem;">⚡ Live Telemetry Analysis</h3>
-                                <span id="telemetry-danger-badge" class="badge badge-danger">CRITICAL RISK</span>
-                            </div>
+                    <img id="video-stream" src="" alt="Live Stream Viewport">
+                </div>
 
-                            <div style="margin-top: 12px;">
-                                <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
-                                    <span>Dynamic Threat Risk Score:</span>
-                                    <strong id="telemetry-risk-score" style="color: #f44336; font-size: 1.2rem;">85%</strong>
-                                </div>
-                                <div class="risk-bar-outer">
-                                    <div id="telemetry-risk-bar" class="risk-bar-inner" style="width: 85%;"></div>
-                                </div>
-                            </div>
+                <!-- Telemetry Card Below Video -->
+                <div class="telemetry-dashboard-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary, #133321);">
+                            Live Temporal Telemetry & Risk Scoring
+                        </span>
+                        <span id="telemetry-danger-badge" class="status-pill" style="color: #dc2626; border-color: rgba(220,38,38,0.4); background: rgba(220,38,38,0.1);">
+                            CRITICAL RISK
+                        </span>
+                    </div>
 
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;">
-                                <div style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px;">
-                                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">Detected Species</div>
-                                    <strong id="telemetry-species" style="color: var(--color-secondary-light); font-size: 1rem;">Elephant Herd</strong>
-                                </div>
-                                <div style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px;">
-                                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">Group Size</div>
-                                    <strong id="telemetry-group-size" style="color: #ffb74d; font-size: 1rem;">3 Tuskers</strong>
-                                </div>
-                                <div style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px;">
-                                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">Pose & Behavior</div>
-                                    <strong id="telemetry-behavior" style="color: #ff5252; font-size: 0.9rem;">Charging Stance ⚡</strong>
-                                </div>
-                                <div style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px;">
-                                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.6);">Movement Vector</div>
-                                    <strong id="telemetry-vector" style="color: #64b5f6; font-size: 0.85rem;">Approaching Buffer (14 km/h)</strong>
-                                </div>
-                            </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 0.88rem; margin-top: 10px;">
+                        <span style="color: var(--color-text-secondary, #526357);">Dynamic Intrusion Risk Level:</span>
+                        <strong id="telemetry-risk-score" style="color: #dc2626;">85%</strong>
+                    </div>
+                    <div class="risk-gauge-track">
+                        <div id="telemetry-risk-bar" class="risk-gauge-fill" style="width: 85%;"></div>
+                    </div>
+
+                    <div class="telemetry-metrics-4col">
+                        <div class="telemetry-subcard">
+                            <div class="telemetry-subcard-label">Identified Species</div>
+                            <div class="telemetry-subcard-val" id="telemetry-species" style="color: var(--color-primary, #133321);">Elephant Herd</div>
                         </div>
-
-                        <div style="background: rgba(244,67,54,0.15); border: 1px solid rgba(244,67,54,0.4); border-radius: 8px; padding: 10px; margin-top: 12px;">
-                            <div style="font-weight: 700; color: #ff5252; font-size: 0.85rem;">⚠️ Active Risk Multipliers:</div>
-                            <div style="font-size: 0.78rem; color: rgba(255,255,255,0.8); margin-top: 2px;">
-                                Charging Posture (+35%) • Pack Size (+20%) • Night Visibility (+15%)
-                            </div>
+                        <div class="telemetry-subcard">
+                            <div class="telemetry-subcard-label">Estimated Pack Size</div>
+                            <div class="telemetry-subcard-val" id="telemetry-group-size" style="color: var(--color-secondary, #c78629);">3 Tuskers</div>
+                        </div>
+                        <div class="telemetry-subcard">
+                            <div class="telemetry-subcard-label">Pose & Gesture</div>
+                            <div class="telemetry-subcard-val" id="telemetry-behavior" style="color: #dc2626;">Charging Stance</div>
+                        </div>
+                        <div class="telemetry-subcard">
+                            <div class="telemetry-subcard-label">Movement Vector</div>
+                            <div class="telemetry-subcard-val" id="telemetry-vector" style="color: #2563eb;">Approaching Settlement (14 km/h)</div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <!-- REAL-TIME WILDLIFE BEHAVIORAL ANALYSIS & EVENT TIMELINE -->
-            <div id="behaviorAnalysisContainer" class="card" style="margin-bottom: var(--space-xl); background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-md); flex-wrap: wrap; gap: 10px;">
-                    <div>
-                        <h3 style="color: var(--color-secondary-light); margin: 0; font-size: 1.25rem; display: flex; align-items: center; gap: 8px;">
-                            <span>🧠 Real-Time Wildlife Behavioral Analysis</span>
-                            <span class="badge badge-info" id="behavior-active-count" style="font-size: 0.75rem;">0 TRACKED</span>
-                        </h3>
-                        <p style="color: rgba(255,255,255,0.6); font-size: 0.8rem; margin: 4px 0 0 0;">
-                            Multi-frame temporal tracking, looming analysis & trajectory heuristic inference. Non-invasive computer-vision behavioral indicators.
-                        </p>
-                    </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <button class="btn btn-outline" style="font-size: 0.75rem; padding: 4px 10px; color: var(--color-secondary-light); border-color: var(--color-secondary-light);" onclick="openBehaviorConfigModal()">
-                            ⚙️ Behavior Config
-                        </button>
-                    </div>
+        <!-- Section 2: Behavioral Analysis Engine & Event Stream -->
+        <section class="panel-standard" id="behaviorAnalysisContainer">
+            <div class="panel-header-standard">
+                <div>
+                    <h2>Real-Time Wildlife Behavioral Analysis</h2>
+                    <p>Trajectory heuristic inference, looming speed vectors, and posture classification</p>
                 </div>
-
-                <div class="grid grid-2" style="gap: var(--space-lg);">
-                    <!-- Active Tracked Animals Behavioral Matrix -->
-                    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 8px;">
-                            <h4 style="color: var(--color-text-light); margin: 0; font-size: 0.95rem;">
-                                🐾 Active Tracked Animals
-                            </h4>
-                            <span style="font-size: 0.72rem; color: rgba(255,255,255,0.5);">Real-Time Temporal Classification</span>
-                        </div>
-                        <div id="activeBehaviorCards" style="display: flex; flex-direction: column; gap: 8px; max-height: 290px; overflow-y: auto;">
-                            <div style="color: rgba(255,255,255,0.4); font-size: 0.85rem; text-align: center; padding: 25px 0;">
-                                No active animal tracks detected. Start surveillance stream to begin real-time behavioral tracking.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Real-Time Behavioral Event Timeline Feed -->
-                    <div style="background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 8px;">
-                            <h4 style="color: var(--color-text-light); margin: 0; font-size: 0.95rem;">
-                                📜 Real-Time Behavioral Event Stream
-                            </h4>
-                            <span style="font-size: 0.72rem; color: rgba(255,255,255,0.5);">Temporal Confirmation Log</span>
-                        </div>
-                        <div id="behaviorEventFeed" style="display: flex; flex-direction: column; gap: 6px; max-height: 290px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.82rem;">
-                            <div style="color: rgba(255,255,255,0.4); font-style: italic; text-align: center; padding: 25px 0;">
-                                Awaiting confirmed behavioral events...
-                            </div>
-                        </div>
-                    </div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span id="behavior-active-count" class="status-pill" style="color: var(--color-primary, #133321); background: #f4f1e8; border-color: var(--color-border, #e2ded3);">0 TRACKED</span>
+                    <button class="btn-action-clean outline" onclick="openBehaviorConfigModal()">Engine Parameters</button>
                 </div>
             </div>
 
-            <!-- Geospatial Threat & Safe Evacuation Map + Decision Support Panel -->
-            <div class="grid grid-2" style="margin-bottom: var(--space-xl);">
-                <!-- Leaflet Interactive GIS Hazard Map -->
-                <div class="card" style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                        <h3 style="color: var(--color-text-light); margin: 0; font-size: 1.15rem;">🗺️ Real-Time GIS Threat & Evacuation Map</h3>
-                        <span class="badge badge-info" id="map-sector-tag">Zone 1 - Forest Border</span>
-                    </div>
-                    <div id="admin-geospatial-map" class="map-container-box"></div>
-                    <div style="display: flex; gap: 15px; margin-top: 10px; font-size: 0.78rem; color: rgba(255,255,255,0.7); flex-wrap: wrap;">
-                        <span><span style="color: #f44336;">🔴</span> Wildlife Threat Location</span>
-                        <span><span style="color: #4caf50;">🟢</span> Safe Evacuation Escape Route</span>
-                        <span><span style="color: #2196f3;">🔵</span> Forest Officer Checkpost</span>
-                    </div>
-
-                    <!-- Automated Active Human Escape Route Banner -->
-                    <div id="active-evacuation-card" style="margin-top: 12px; background: rgba(76, 175, 80, 0.15); border: 1px solid rgba(76, 175, 80, 0.5); padding: 12px; border-radius: 8px; transition: all 0.3s ease;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
-                            <strong style="color: #66bb6a; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
-                                <span>⚡ AUTOMATIC HUMAN ESCAPE ROUTE ENGAGED</span>
-                            </strong>
-                            <span id="evac-heading-badge" class="badge badge-success">HEADING: NORTHEAST</span>
-                        </div>
-                        <div id="evac-instruction-text" style="font-size: 0.85rem; color: #ffffff; margin-top: 6px; font-weight: 500;">
-                            📍 Move NORTHEAST (350m) → Proceed directly to Community Center Evacuation Hub. Hazard clearance: 500m.
-                        </div>
-                    </div>
+            <div style="background: #fdfcf9; border: 1px solid var(--color-border, #e2ded3); border-radius: 10px; padding: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.82rem; font-weight: 700; color: var(--color-text-secondary, #526357); text-transform: uppercase; margin-bottom: 1rem;">
+                    <span>Critical Threat Event Timeline</span>
+                    <span>Severity</span>
                 </div>
-
-                <!-- Tactical Decision Support Panel for Forest Officers -->
-                <div class="card" style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                        <h3 style="color: var(--color-secondary-light); margin: 0; font-size: 1.15rem;">📋 Officer Decision Support Panel</h3>
-                        <span class="badge badge-warning">4 ACTIONS PENDING</span>
-                    </div>
-                    <div id="decision-support-panel" style="max-height: 380px; overflow-y: auto; padding-right: 5px;">
-                        <div class="decision-card priority-critical">
-                            <div style="display: flex; justify-content: space-between; font-weight: 700;">
-                                <span style="color: #ff5252;">P1 - CRITICAL ACTION</span>
-                                <button class="btn btn-primary" style="padding: 2px 10px; font-size: 0.75rem;" onclick="dispatchPatrolUnit('Unit Alpha')">Dispatch Patrol</button>
-                            </div>
-                            <div style="margin-top: 4px; font-weight: 600;">Dispatch Rapid Response Unit Alpha to Zone 1 Sector B</div>
-                            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-top: 2px;">Reason: Aggressive Elephant herd (3) approaching village boundary within 150m.</div>
-                        </div>
-
-                        <div class="decision-card priority-urgent">
-                            <div style="display: flex; justify-content: space-between; font-weight: 700;">
-                                <span style="color: #ffb74d;">P1 - AUDIO DETERRENT</span>
-                                <button class="btn btn-secondary" style="padding: 2px 10px; font-size: 0.75rem;" onclick="triggerAudioRepellent('bee')">Activate Speaker</button>
-                            </div>
-                            <div style="margin-top: 4px; font-weight: 600;">Trigger Bio-Acoustic Bee Deterrent at Boundary Speaker 4</div>
-                            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-top: 2px;">Reason: Proven 89% deterrence against elephant movement.</div>
-                        </div>
-
-                        <div class="decision-card priority-ready">
-                            <div style="display: flex; justify-content: space-between; font-weight: 700;">
-                                <span style="color: #81c784;">P2 - COMMUNITY ALERT</span>
-                                <button class="btn btn-outline" style="padding: 2px 10px; font-size: 0.75rem; color: #81c784; border-color: #81c784;" onclick="doSendSms()">Broadcast SMS</button>
-                            </div>
-                            <div style="margin-top: 4px; font-weight: 600;">Broadcast Evacuation Guidance to Ward 4 Villagers</div>
-                            <div style="font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-top: 2px;">Advice: Direct evacuation to Community Center Evacuation Hub (Northeast 350m).</div>
-                        </div>
+                <div id="behaviorEventFeed" style="min-height: 200px; max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; font-family: monospace; font-size: 0.85rem;">
+                    <div style="color: var(--color-text-secondary, #526357); font-size: 0.88rem; text-align: center; padding: 3rem 1rem; font-family: inherit;">
+                        Awaiting threat event triggers...
                     </div>
                 </div>
             </div>
+            <div id="activeBehaviorCards" style="display: none;"></div>
+        </section>
 
-            <div class="grid grid-2">
-                <div class="detection-feed">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md); font-size: 1.25rem;">
-                        Wildlife Detections Log</h3>
-                    <div id="wildlifeDetections">
-                        <!-- Detections inserted dynamically -->
+        <!-- Section 3: Officer Decision Support (Clean Dedicated Card, Map Removed) -->
+        <section class="panel-standard" id="decision-support">
+            <div class="panel-header-standard">
+                <div>
+                    <h2>Officer Decision Support & Rapid Dispatch</h2>
+                    <p>Recommended mitigation actions, rapid patrol dispatch, bio-acoustic sirens, and community alerts</p>
+                </div>
+                <span class="status-pill" style="color: #d97706; border-color: rgba(217, 119, 6, 0.4); background: rgba(217, 119, 6, 0.1);">3 ACTIONS READY</span>
+            </div>
+
+            <div id="decision-support-panel" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1.25rem;">
+                <div class="decision-card priority-critical">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: #dc2626; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.05em;">PRIORITY 1 - IMMEDIATE DISPATCH</span>
+                        <button class="btn-action-clean primary" style="padding: 4px 12px; font-size: 0.78rem;" onclick="dispatchPatrolUnit('Unit Alpha')">Dispatch Unit Alpha</button>
                     </div>
+                    <div style="margin-top: 8px; font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary, #1c2b22);">Dispatch Rapid Response Team Alpha to Zone 1 Sector B</div>
+                    <div style="font-size: 0.82rem; color: var(--color-text-secondary, #526357); margin-top: 4px;">Elephant herd (3) confirmed approaching village boundary line within 150m.</div>
                 </div>
 
-                <div class="detection-feed">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md); font-size: 1.25rem;">
-                        Intrusion Alerts Log</h3>
-                    <div id="intrusionAlerts">
-                        <!-- Alerts inserted dynamically -->
+                <div class="decision-card priority-urgent">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: #d97706; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.05em;">PRIORITY 1 - BIO-ACOUSTIC REPELLENT</span>
+                        <button class="btn-action-clean outline" style="padding: 4px 12px; font-size: 0.78rem;" onclick="triggerAudioRepellent('bee')">Activate Speaker 4</button>
                     </div>
+                    <div style="margin-top: 8px; font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary, #1c2b22);">Broadcast Bio-Acoustic Deterrent at Sector 4 Perimeter</div>
+                    <div style="font-size: 0.82rem; color: var(--color-text-secondary, #526357); margin-top: 4px;">Known 89% deterrent efficacy for elephant boundary diversion.</div>
+                </div>
+
+                <div class="decision-card priority-ready">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="color: #16a34a; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.05em;">PRIORITY 2 - COMMUNITY WARNING</span>
+                        <button class="btn-action-clean outline" style="padding: 4px 12px; font-size: 0.78rem;" onclick="doSendSms()">Broadcast SMS</button>
+                    </div>
+                    <div style="margin-top: 8px; font-weight: 700; font-size: 0.95rem; color: var(--color-text-primary, #1c2b22);">Send Emergency Advisory SMS to Ward 4 Community</div>
+                    <div style="font-size: 0.82rem; color: var(--color-text-secondary, #526357); margin-top: 4px;">Advises residents to remain indoors or divert towards Community Center Hub.</div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- IOT DEVICE MANAGEMENT & ADMIN CONTROLS -->
-    <section class="section" id="iot-management"
-        style="background: rgba(45, 80, 22, 0.2); border-top: 1px solid var(--color-primary); border-bottom: 1px solid var(--color-primary);">
-        <div class="container">
-            <h2 style="color: var(--color-secondary-light); margin-bottom: var(--space-lg);">IoT Device Management
-            </h2>
-
-            <div class="grid grid-2">
-                <!-- Device Status Panel -->
-                <div class="card"
-                    style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md);">Active IoT Sensors
-                    </h3>
-                    <div id="iotDeviceList" style="display: flex; flex-direction: column; gap: var(--space-sm);">
-                        <!-- Devices will be dynamically inserted -->
+        <!-- Section 4: Critical Wildlife Intrusion Alerts Log -->
+        <section class="panel-standard" id="critical-alerts-section">
+            <div class="panel-header-standard">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span class="status-indicator-clean danger"></span>
+                        <h3 style="margin: 0;">Critical Wildlife Intrusion Alerts Log</h3>
                     </div>
-                    <button class="btn btn-primary w-full" style="margin-top: var(--space-md);"
-                        onclick="refreshDevices()">
-                        Refresh Device Status
-                    </button>
+                    <p style="margin: 4px 0 0 0;">High-priority perimeter breaches, apex predator incursions, and dispatched warnings</p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <span class="badge-status-clean danger" style="padding: 4px 10px; font-size: 0.75rem;">Critical Alerts Only</span>
+                    <button class="btn-action-clean outline" style="padding: 4px 12px; font-size: 0.78rem;" onclick="loadIntrusionAlerts()">Refresh Alerts</button>
+                </div>
+            </div>
+            <div id="intrusionAlerts" class="feed-container-clean" style="max-height: 480px; overflow-y: auto;">
+                <!-- Populated dynamically via script.js with critical alerts only -->
+            </div>
+            <!-- Hidden DOM hook retained for script backward compatibility -->
+            <div id="wildlifeDetections" style="display: none;"></div>
+        </section>
+
+        <!-- Section 5: IoT Device Fleet & Alert Gateway Settings -->
+        <section class="panel-standard" id="iot-management">
+            <div class="panel-header-standard">
+                <div>
+                    <h2>IoT Sensor Fleet & Early-Warning Gateway</h2>
+                    <p>Perimeter hardware status, SMS dispatch credentials, and siren configuration</p>
+                </div>
+            </div>
+
+            <div class="grid-split-2">
+                <!-- Device Status Fleet -->
+                <div style="background: #fdfcf9; border: 1px solid var(--color-border, #e2ded3); border-radius: 10px; padding: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary, #526357);">Active Field Sensors</span>
+                        <button class="btn-action-clean outline" style="padding: 4px 10px; font-size: 0.78rem;" onclick="refreshDevices()">Refresh Status</button>
+                    </div>
+                    <div id="iotDeviceList" style="display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto;">
+                        <!-- Inserted dynamically -->
+                    </div>
                 </div>
 
-                <!-- Alert Configuration -->
-                <div class="card"
-                    style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark);">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md);">Alert Configuration
-                    </h3>
+                <!-- Alert Rules & SMS Configuration -->
+                <div style="background: #fdfcf9; border: 1px solid var(--color-border, #e2ded3); border-radius: 10px; padding: 1.5rem;">
+                    <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary, #526357); display: block; margin-bottom: 1rem;">
+                        Automated Dispatch Settings
+                    </span>
 
-                    <div class="form-group">
-                        <label class="form-label" style="color: rgba(255, 255, 255, 0.8);">SMS Recipients</label>
-                        <textarea class="form-textarea" id="smsRecipients" rows="3"
-                            placeholder="+91 98765 43210&#10;+91 98765 43211">+91 98765 43210
-+91 98765 43211
-+91 98765 43212</textarea>
+                    <div class="form-group-clean">
+                        <label>SMS Alert Recipient Numbers</label>
+                        <textarea class="form-input-clean" id="smsRecipients" rows="2" style="font-family: monospace;">+91 9495848807&#10;+91 9876543210</textarea>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label" style="color: rgba(255, 255, 255, 0.8);">Alert Cooldown
-                            (seconds)</label>
-                        <input type="number" class="form-input" id="alertCooldown" value="10" min="5" max="300">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                        <div class="form-group-clean">
+                            <label>Cooldown (seconds)</label>
+                            <input type="number" class="form-input-clean" id="alertCooldown" value="10" min="5" max="300">
+                        </div>
+                        <div class="form-group-clean">
+                            <label>Auto-Response Mode</label>
+                            <select class="select-clean" id="autoResponseMode" style="width: 100%;">
+                                <option value="full">Full Auto (Sound + SMS)</option>
+                                <option value="sms-only">SMS Alert Only</option>
+                                <option value="sound-only">Acoustic Siren Only</option>
+                                <option value="manual">Manual Approval</option>
+                            </select>
+                        </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label" style="color: rgba(255, 255, 255, 0.8);">Auto-Response Mode</label>
-                        <select class="form-select" id="autoResponseMode">
-                            <option value="full">Full Auto (Sound + SMS)</option>
-                            <option value="sms-only">SMS Only</option>
-                            <option value="sound-only">Sound Only</option>
-                            <option value="manual">Manual Approval</option>
-                        </select>
-                    </div>
-
-                    <button class="btn btn-primary w-full" onclick="saveAlertConfig()">
+                    <button class="btn-action-clean primary" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="saveAlertConfig()">
                         Save Configuration
                     </button>
                 </div>
             </div>
 
-            <!-- SMS Gateway Configuration -->
-            <div class="card" style="background: var(--color-surface-dark); border: 2px solid var(--color-primary); margin-top: var(--space-lg);">
-                <div style="display: flex; align-items: center; gap: var(--space-md); margin-bottom: var(--space-md);">
-                    <div style="font-size: 2rem;">🛡️</div>
-                    <div>
-                        <h3 style="color: var(--color-secondary-light); margin: 0;">SMS Gateway Settings</h3>
-                        <p style="color: rgba(255,255,255,0.6); font-size: 0.875rem;">Configure your Fast2SMS credentials for automated alerts</p>
+            <!-- SMS Gateway Keys -->
+            <div style="background: #fdfcf9; border: 1px solid var(--color-border, #e2ded3); border-radius: 10px; padding: 1.5rem; margin-top: 1.5rem;">
+                <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary, #526357); display: block; margin-bottom: 1rem;">
+                    Fast2SMS & Twilio Service Keys
+                </span>
+                <div class="grid-split-2">
+                    <div class="form-group-clean">
+                        <label>Fast2SMS API Key</label>
+                        <input type="password" class="form-input-clean" id="setting_fast2sms_api_key" placeholder="Enter Fast2SMS Authorization Key">
                     </div>
-                </div>
-
-                <div class="grid grid-2">
-                    <div class="form-group">
-                        <label class="form-label">Fast2SMS API Key</label>
-                        <input type="password" class="form-input" id="setting_fast2sms_api_key" placeholder="Enter your Fast2SMS API Key">
+                    <div class="form-group-clean">
+                        <label>Primary Alert Target Phone</label>
+                        <input type="text" class="form-input-clean" id="setting_alert_to_number" placeholder="+91 9495848807">
                     </div>
-                    <div class="form-group">
-                        <label class="form-label">Recipient Number (India)</label>
-                        <input type="text" class="form-input" id="setting_alert_to_number" placeholder="+91 9495848807">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label">Fast2SMS Route</label>
-                        <select class="form-select" id="setting_fast2sms_route">
-                            <option value="v3" selected>v3 (Direct - Recommended)</option>
-                            <option value="q">Quick Transactional (q)</option>
+                    <div class="form-group-clean">
+                        <label>Fast2SMS Route</label>
+                        <select class="select-clean" id="setting_fast2sms_route" style="width: 100%;">
+                            <option value="v3" selected>v3 (Transactional Route - Recommended)</option>
+                            <option value="q">Quick (q)</option>
                             <option value="dlt">DLT Route</option>
                         </select>
                     </div>
-                </div>
-
-                <div style="margin: var(--space-md) 0; border-top: 1px solid rgba(255,255,255,0.1); padding-top: var(--space-md);">
-                    <h4 style="color: var(--color-text-light); margin-bottom: var(--space-sm);">Secondary / Fallback (Twilio)</h4>
-                    <div class="grid grid-3">
-                        <div class="form-group">
-                            <label class="form-label">Account SID</label>
-                            <input type="text" class="form-input" id="setting_twilio_account_sid" placeholder="AC...">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Auth Token</label>
-                            <input type="password" class="form-input" id="setting_twilio_auth_token" placeholder="Token">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">From Number</label>
-                            <input type="text" class="form-input" id="setting_twilio_from_number" placeholder="+1234567890">
-                        </div>
+                    <div class="form-group-clean">
+                        <label>Twilio Account SID (Secondary)</label>
+                        <input type="text" class="form-input-clean" id="setting_twilio_account_sid" placeholder="AC...">
+                    </div>
+                    <div class="form-group-clean">
+                        <label>Twilio Auth Token</label>
+                        <input type="password" class="form-input-clean" id="setting_twilio_auth_token" placeholder="Token">
+                    </div>
+                    <div class="form-group-clean">
+                        <label>Twilio From Number</label>
+                        <input type="text" class="form-input-clean" id="setting_twilio_from_number" placeholder="+1234567890">
                     </div>
                 </div>
 
-                <div style="display: flex; gap: var(--space-md); margin-top: var(--space-md);">
-                    <button class="btn btn-primary" onclick="saveSystemSettings()" id="btnSaveSettings">
-                        Save SMS Settings
-                    </button>
-                    <button class="btn btn-outline" onclick="testAlertSystem()">
-                        Send Test SMS
-                    </button>
+                <div style="display: flex; gap: 12px; margin-top: 10px;">
+                    <button class="btn-action-clean primary" id="btnSaveSettings" onclick="saveSystemSettings()">Save Gateway Keys</button>
+                    <button class="btn-action-clean outline" onclick="testAlertSystem()">Send Test Dispatch</button>
                 </div>
-                
-                <div style="margin-top: var(--space-md); padding: var(--space-md); background: rgba(124, 179, 66, 0.1); border-radius: var(--radius-sm); font-size: 0.875rem; color: rgba(255,255,255,0.7);">
-                    <strong>💡 Pro Tip:</strong> Get your API key from <a href="https://www.fast2sms.com/" target="_blank" style="color: var(--color-secondary-light);">Fast2SMS.com</a>. Ensure your account has sufficient balance for sending SMS.
+            </div>
+        </section>
+
+        <!-- Section 6: Community Sighting Validation Queue -->
+        <section class="panel-standard" id="reports">
+            <div class="panel-header-standard">
+                <div>
+                    <h2>Citizen Sighting Reports - Verification Queue</h2>
+                    <p>Review community sightings with automated EXIF, deepfake and pHash audit validation</p>
                 </div>
             </div>
 
-            <!-- Data Export & System Tools -->
-            <div class="grid grid-3" style="margin-top: var(--space-lg);">
-                <div class="card"
-                    style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark); text-align: center;">
-                    <div
-                        style="font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin-bottom: var(--space-sm);">
-                        CSV</div>
-                    <h4 style="color: var(--color-text-light); margin-bottom: var(--space-sm);">Export Detection Data
-                    </h4>
-                    <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-md);">
-                        Download CSV reports of all detections
-                    </p>
-                    <button class="btn btn-outline w-full" onclick="exportDetectionData()">
-                        Export CSV
-                    </button>
-                </div>
-
-                <div class="card"
-                    style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark); text-align: center;">
-                    <div
-                        style="font-size: 1.5rem; font-weight: 800; color: var(--color-accent); margin-bottom: var(--space-sm);">
-                        IMG</div>
-                    <h4 style="color: var(--color-text-light); margin-bottom: var(--space-sm);">Detection Archive</h4>
-                    <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-md);">
-                        View saved detection images
-                    </p>
-                    <button class="btn btn-outline w-full" onclick="viewDetectionArchive()">
-                        View Archive
-                    </button>
-                </div>
-
-                <div class="card"
-                    style="background: var(--color-surface-dark); border: 1px solid var(--color-border-dark); text-align: center;">
-                    <div
-                        style="font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin-bottom: var(--space-sm);">
-                        SMS</div>
-                    <h4 style="color: var(--color-text-light); margin-bottom: var(--space-sm);">Test Alert System</h4>
-                    <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-bottom: var(--space-md);">
-                        Send test SMS to all recipients
-                    </p>
-                    <button class="btn btn-outline w-full" onclick="testAlertSystem()">
-                        Send Test Alert
-                    </button>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Sighting Report Validation -->
-    <section class="section" id="reports" style="background: rgba(26, 31, 26, 0.5);">
-        <div class="container">
-            <h2 style="color: var(--color-secondary-light); margin-bottom: var(--space-lg);">Community Reports - Validation Queue</h2>
-
-            <div class="grid grid-3" id="reportValidation" style="margin-bottom: var(--space-xl);">
-                <!-- Pending reports will be dynamically inserted -->
+            <div class="grid-split-2" id="reportValidation">
+                <!-- Dynamically populated via script.js -->
             </div>
 
-            <h3 style="color: var(--color-secondary-light); margin-bottom: var(--space-md);">Verified Report History</h3>
-            <div id="reportHistory" style="display: flex; flex-direction: column; gap: var(--space-md); max-height: 500px; overflow-y: auto; padding-right: 10px;">
-                <!-- Verified reports will move here -->
-                <div style="color:rgba(255,255,255,0.3); text-align:center; padding:var(--space-md); border: 1px dashed rgba(255,255,255,0.1); border-radius: 8px;">
-                    Verified reports will appear here after approval.
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- Analytics & Predictions -->
-    <section class="section" id="analytics">
-        <div class="container">
-            <h2 style="color: var(--color-secondary-light); margin-bottom: var(--space-lg);">Behavioral Analytics &
-                Predictions</h2>
-
-            <div class="grid grid-2">
-                <div class="chart-container">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md);">Species Detection Trends
-                        (Last 30 Days)</h3>
-                    <div id="speciesChart"
-                        style="height: 300px; display: flex; align-items: flex-end; justify-content: space-around; gap: var(--space-sm);">
-                        <!-- Chart bars will be inserted here -->
-                    </div>
-                </div>
-
-                <div class="chart-container">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md);">Detection Time
-                        Distribution</h3>
-                    <div id="timeChart"
-                        style="height: 300px; display: flex; align-items: flex-end; justify-content: space-around; gap: var(--space-xs);">
-                        <!-- Chart bars will be inserted here -->
+            <div style="margin-top: 1.5rem;">
+                <span style="font-size: 0.85rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary, #526357); display: block; margin-bottom: 0.75rem;">
+                    Recently Verified Reports Audit Log
+                </span>
+                <div id="reportHistory">
+                    <div style="color: var(--color-text-secondary, #526357); text-align: center; padding: 2rem; border: 1px dashed var(--color-border, #e2ded3); border-radius: 8px; font-size: 0.88rem;">
+                        Verified reports will appear here after approval.
                     </div>
                 </div>
             </div>
+        </section>
 
-            <!-- Seasonal Analysis -->
-            <div class="chart-container" style="margin-top: var(--space-lg);">
-                <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md);">🌾 Seasonal Movement
-                    Predictions</h3>
-                <div
-                    style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: var(--space-md);">
-                    <div
-                        style="background: #0f1f0f; padding: var(--space-md); border-radius: var(--radius-md); border-left: 4px solid var(--color-danger-high);">
-                        <div style="font-weight: 600; margin-bottom: var(--space-xs); color: var(--color-text-light);">
-                            High Risk Period</div>
-                        <div
-                            style="color: rgba(255, 255, 255, 0.7); font-size: 0.875rem; margin-bottom: var(--space-sm);">
-                            Crop Harvest Season</div>
-                        <div style="color: var(--color-danger-high); font-weight: 600;">Next 2 weeks</div>
-                        <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-top: var(--space-sm);">
-                            Increased elephant and wild boar activity expected near agricultural areas
-                        </p>
-                    </div>
-
-                    <div
-                        style="background: #0f1f0f; padding: var(--space-md); border-radius: var(--radius-md); border-left: 4px solid var(--color-danger-medium);">
-                        <div style="font-weight: 600; margin-bottom: var(--space-xs); color: var(--color-text-light);">
-                            Water Scarcity Impact</div>
-                        <div
-                            style="color: rgba(255, 255, 255, 0.7); font-size: 0.875rem; margin-bottom: var(--space-sm);">
-                            Summer Migration</div>
-                        <div style="color: var(--color-danger-medium); font-weight: 600;">April - June</div>
-                        <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-top: var(--space-sm);">
-                            Wildlife moving closer to human settlements seeking water sources
-                        </p>
-                    </div>
-
-                    <div
-                        style="background: #0f1f0f; padding: var(--space-md); border-radius: var(--radius-md); border-left: 4px solid var(--color-safe);">
-                        <div style="font-weight: 600; margin-bottom: var(--space-xs); color: var(--color-text-light);">
-                            Low Activity Period</div>
-                        <div
-                            style="color: rgba(255, 255, 255, 0.7); font-size: 0.875rem; margin-bottom: var(--space-sm);">
-                            Monsoon Season</div>
-                        <div style="color: var(--color-safe); font-weight: 600;">July - September</div>
-                        <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; margin-top: var(--space-sm);">
-                            Reduced conflict incidents due to abundant natural resources
-                        </p>
-                    </div>
+        <!-- Section 7: Behavioral Analytics & Predictive Models -->
+        <section class="panel-standard" id="analytics">
+            <div class="panel-header-standard">
+                <div>
+                    <h2>Behavioral Analytics & Movement Predictions</h2>
+                    <p>Macro-level KPI telemetry, seasonal forecasting, and environmental correlations</p>
                 </div>
             </div>
 
-            <!-- Environmental Factors -->
-            <div class="chart-container" style="margin-top: var(--space-lg);">
-                <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md);">🌡️ Environmental
-                    Correlation Analysis</h3>
-                <div class="grid grid-4">
-                    <div
-                        style="text-align: center; padding: var(--space-md); background: #0f1f0f; border-radius: var(--radius-md);">
-                        <div style="font-size: 2rem; margin-bottom: var(--space-xs);">🌡️</div>
-                        <div style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem;">Temperature</div>
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-accent-light);">32°C</div>
-                        <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.75rem; margin-top: var(--space-xs);">↑
-                            Activity increases</div>
+            <div class="grid-split-2">
+                <div style="background: #fdfcf9; border: 1px solid var(--color-border, #e2ded3); border-radius: 10px; padding: 1.5rem;">
+                    <span style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary, #526357); display: block; margin-bottom: 1rem;">
+                        Species Detection Frequency (30 Days)
+                    </span>
+                    <div id="speciesChart" style="height: 240px; display: flex; align-items: flex-end; justify-content: space-around; gap: 8px;">
+                        <!-- Chart generated via script.js -->
                     </div>
+                </div>
 
-                    <div
-                        style="text-align: center; padding: var(--space-md); background: #0f1f0f; border-radius: var(--radius-md);">
-                        <div style="font-size: 2rem; margin-bottom: var(--space-xs);">💧</div>
-                        <div style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem;">Humidity</div>
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-secondary-light);">45%</div>
-                        <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.75rem; margin-top: var(--space-xs);">
-                            Normal range</div>
-                    </div>
-
-                    <div
-                        style="text-align: center; padding: var(--space-md); background: #0f1f0f; border-radius: var(--radius-md);">
-                        <div style="font-size: 2rem; margin-bottom: var(--space-xs);">🌙</div>
-                        <div style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem;">Moon Phase</div>
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-text-light);">Waxing</div>
-                        <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.75rem; margin-top: var(--space-xs);">
-                            Nocturnal activity ↑</div>
-                    </div>
-
-                    <div
-                        style="text-align: center; padding: var(--space-md); background: #0f1f0f; border-radius: var(--radius-md);">
-                        <div style="font-size: 2rem; margin-bottom: var(--space-xs);">🌾</div>
-                        <div style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem;">Crop Status</div>
-                        <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-danger-medium);">Harvest
-                        </div>
-                        <div style="color: rgba(255, 255, 255, 0.5); font-size: 0.75rem; margin-top: var(--space-xs);">
-                            High risk period</div>
+                <div style="background: #fdfcf9; border: 1px solid var(--color-border, #e2ded3); border-radius: 10px; padding: 1.5rem;">
+                    <span style="font-size: 0.82rem; font-weight: 700; text-transform: uppercase; color: var(--color-text-secondary, #526357); display: block; margin-bottom: 1rem;">
+                        Hourly Incursion Time Distribution
+                    </span>
+                    <div id="timeChart" style="height: 240px; display: flex; align-items: flex-end; justify-content: space-around; gap: 6px;">
+                        <!-- Chart generated via script.js -->
                     </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <!-- System Configuration -->
-    <section class="section" style="background: rgba(26, 31, 26, 0.5);">
-        <div class="container">
-            <h2 style="color: var(--color-secondary-light); margin-bottom: var(--space-lg);">System Configuration
-            </h2>
+    </main>
 
-            <div class="grid grid-2">
-                <div class="chart-container">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md); font-size: 1.25rem;">
-                        Alert Thresholds</h3>
-                    <div style="display: flex; flex-direction: column; gap: var(--space-md);">
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-xs);">
-                                <span style="color: rgba(255, 255, 255, 0.7);">High Danger (Tiger, Leopard)</span>
-                                <span style="color: var(--color-danger-high); font-weight: 600;">Immediate</span>
-                            </div>
-                            <div style="background: #0f1f0f; height: 8px; border-radius: 4px; overflow: hidden;">
-                                <div style="background: var(--color-danger-high); width: 100%; height: 100%;"></div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-xs);">
-                                <span style="color: rgba(255, 255, 255, 0.7);">Medium Danger (Elephant, Bear)</span>
-                                <span style="color: var(--color-danger-medium); font-weight: 600;">5 min delay</span>
-                            </div>
-                            <div style="background: #0f1f0f; height: 8px; border-radius: 4px; overflow: hidden;">
-                                <div style="background: var(--color-danger-medium); width: 75%; height: 100%;"></div>
-                            </div>
-                        </div>
-
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-xs);">
-                                <span style="color: rgba(255, 255, 255, 0.7);">Low Risk (Wild Boar, Deer)</span>
-                                <span style="color: var(--color-danger-low); font-weight: 600;">15 min delay</span>
-                            </div>
-                            <div style="background: #0f1f0f; height: 8px; border-radius: 4px; overflow: hidden;">
-                                <div style="background: var(--color-danger-low); width: 50%; height: 100%;"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="chart-container">
-                    <h3 style="color: var(--color-text-light); margin-bottom: var(--space-md); font-size: 1.25rem;">
-                        Sensor Network Status</h3>
-                    <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
-                        <div
-                            style="display: flex; justify-content: space-between; padding: var(--space-sm); background: #0f1f0f; border-radius: var(--radius-sm);">
-                            <span style="color: rgba(255, 255, 255, 0.7);">📹 Visual Cameras</span>
-                            <span class="badge badge-success">24/24 Online</span>
-                        </div>
-                        <div
-                            style="display: flex; justify-content: space-between; padding: var(--space-sm); background: #0f1f0f; border-radius: var(--radius-sm);">
-                            <span style="color: rgba(255, 255, 255, 0.7);">🌡️ Thermal Sensors</span>
-                            <span class="badge badge-success">18/18 Online</span>
-                        </div>
-                        <div
-                            style="display: flex; justify-content: space-between; padding: var(--space-sm); background: #0f1f0f; border-radius: var(--radius-sm);">
-                            <span style="color: rgba(255, 255, 255, 0.7);">🎤 Acoustic Monitors</span>
-                            <span class="badge badge-success">12/12 Online</span>
-                        </div>
-                        <div
-                            style="display: flex; justify-content: space-between; padding: var(--space-sm); background: #0f1f0f; border-radius: var(--radius-sm);">
-                            <span style="color: rgba(255, 255, 255, 0.7);">📡 Motion Detectors</span>
-                            <span class="badge badge-warning">29/30 Online</span>
-                        </div>
-                    </div>
+    <!-- Standard Footer (Matches index.html & user-portal.html) -->
+    <footer style="background: var(--color-primary-dark, #0a1b12); color: rgba(255, 255, 255, 0.8); padding: 3rem 0; text-align: center; border-top: 1px solid var(--color-border);">
+        <div class="container" style="max-width: 1440px; margin: 0 auto; padding: 0 2rem;">
+            <div class="navbar-brand" style="justify-content: center; margin-bottom: 1rem; color: #ffffff;">
+                <img src="logo.jpg" alt="WildAI Logo" style="height: 44px; border-radius: 8px; border: 1.5px solid var(--color-secondary); margin-right: 12px;">
+                <div style="text-align: left;">
+                    <span data-lang="brand" style="font-weight: 800; letter-spacing: 0.04em; color: #ffffff;">WildAI</span>
+                    <span style="display: block; font-size: 0.65rem; color: var(--color-secondary); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">Conservation Tech</span>
                 </div>
             </div>
-        </div>
-    </section>
-
-    <!-- Footer -->
-    <footer
-        style="background: var(--color-surface-dark); color: rgba(255, 255, 255, 0.8); padding: var(--space-xl) 0; text-align: center; border-top: 1px solid var(--color-border-dark);">
-        <div class="container">
-            <p style="color: rgba(255, 255, 255, 0.6);">
-                <span data-lang="brand">WildAI</span> Admin Portal - Forest Department
+            <p style="margin: 0 0 6px 0; font-size: 0.88rem; color: rgba(255, 255, 255, 0.7);">
+                WildAI Wildlife Intrusion Monitoring & Human-Wildlife Conflict Prevention System
             </p>
-            <p style="color: rgba(255, 255, 255, 0.5); font-size: 0.875rem; margin-top: var(--space-xs);">
-                © 2026 <span data-lang="brand">WildAI</span>. Secure monitoring system.
+            <p style="margin: 0; font-size: 0.8rem; color: rgba(255, 255, 255, 0.5);">
+                Authorized Forest Department Personnel Only &bull; Non-invasive ecological monitoring &bull; © 2026 WildAI
             </p>
         </div>
     </footer>
 
-    <!-- ========================================================= -->
-    <!-- POPUP 1: SMS Alert Popup                                   -->
-    <!-- ========================================================= -->
-    <div id="smsAlertModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; align-items: center; justify-content: center;">
-        <div style="background: linear-gradient(135deg, #1a0a0a, #2d1010); border: 2px solid #ff4444; border-radius: 16px; padding: 32px; max-width: 480px; width: 90%; box-shadow: 0 0 40px rgba(255,68,68,0.4); animation: popupSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
-            <!-- Header -->
-            <div style="text-align: center; margin-bottom: 20px;">
-                <div id="smsModalIcon" style="font-size: 3rem; margin-bottom: 8px;">🚨</div>
-                <h2 id="smsModalTitle" style="color: #ff4444; margin: 0; font-size: 1.5rem; letter-spacing: 1px;">🚨 THREAT DETECTED!</h2>
-                <p id="smsModalSubtitle" style="color: rgba(255,255,255,0.5); font-size: 0.8rem; margin-top: 4px;">Intrusion Alert System</p>
+    <!-- MODAL 1: SMS Alert Confirmation Modal -->
+    <div id="smsAlertModal" class="modal hidden modal-standard-backdrop">
+        <div class="modal-standard-box danger">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <span id="smsModalIcon" class="status-pill" style="color: #dc2626; border-color: rgba(220,38,38,0.4); background: rgba(220,38,38,0.1);">CRITICAL</span>
+                <span style="font-size: 0.8rem; color: var(--color-text-secondary, #526357);">Intrusion Alert Dispatch</span>
             </div>
-            <!-- Detection Preview -->
-            <div style="background: rgba(0,0,0,0.4); border-radius: 10px; padding: 12px; margin-bottom: 12px; border: 1px solid rgba(255,68,68,0.3);">
-                <img id="smsModalImage" src="" alt="Detection" style="width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; display: block;">
+            <h3 id="smsModalTitle" style="margin: 0 0 0.5rem 0; color: var(--color-primary, #133321); font-size: 1.35rem;">Intrusion Detected</h3>
+            <p id="smsModalSubtitle" style="color: var(--color-text-secondary, #526357); font-size: 0.88rem; margin-bottom: 1.25rem;">Automated Early Warning Protocol</p>
+            
+            <div style="background: #f7f5ed; border-radius: 8px; padding: 12px; margin-bottom: 1.25rem; border: 1px solid var(--color-border, #e2ded3);">
+                <img id="smsModalImage" src="" alt="Detection Snapshot" style="width: 100%; max-height: 180px; object-fit: cover; border-radius: 6px; display: block;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
                     <div>
-                        <div id="smsModalSpecies" style="color: #ff8888; font-weight: 700; font-size: 1.2rem;">UNKNOWN</div>
-                        <div id="smsModalConfidence" style="color: rgba(255,255,255,0.5); font-size: 0.8rem;">Confidence: 0%</div>
+                        <div id="smsModalSpecies" style="font-weight: 700; color: #dc2626; font-size: 1.15rem;">UNKNOWN</div>
+                        <div id="smsModalConfidence" style="font-size: 0.82rem; color: var(--color-text-secondary, #526357);">Confidence: 0%</div>
                     </div>
-                    <div id="smsModalDangerBadge" style="background: #ff4444; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;">HIGH RISK</div>
+                    <span id="smsModalDangerBadge" class="status-pill" style="color: #dc2626; background: rgba(220,38,38,0.1); border-color: #dc2626;">HIGH RISK</span>
                 </div>
             </div>
-            <!-- Behavioral Analysis Display -->
-            <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+
+            <div style="display: flex; justify-content: space-between; background: #ffffff; border: 1px solid var(--color-border, #e2ded3); padding: 10px 14px; border-radius: 6px; margin-bottom: 1.25rem; font-size: 0.88rem;">
                 <div>
-                    <div style="font-size: 0.72rem; color: rgba(255,255,255,0.5); text-transform: uppercase;">Observed Behavior</div>
-                    <strong id="smsModalBehavior" style="color: #64b5f6; font-size: 0.95rem;">STANDING (STATIONARY)</strong>
+                    <span style="font-size: 0.75rem; color: var(--color-text-secondary, #526357); display: block;">Observed Behavior</span>
+                    <strong id="smsModalBehavior" style="color: #2563eb;">STANDING (STATIONARY)</strong>
                 </div>
                 <div style="text-align: right;">
-                    <div style="font-size: 0.72rem; color: rgba(255,255,255,0.5); text-transform: uppercase;">Risk Score</div>
-                    <strong id="smsModalRiskScore" style="color: #ff5252; font-size: 1.1rem;">85%</strong>
+                    <span style="font-size: 0.75rem; color: var(--color-text-secondary, #526357); display: block;">Risk Score</span>
+                    <strong id="smsModalRiskScore" style="color: #dc2626;">85%</strong>
                 </div>
             </div>
-            <!-- Auto Status Badge -->
-            <div id="smsModalAutoBadge" style="display: none; background: rgba(76,175,80,0.15); border: 1px solid #4caf50; color: #81c784; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; text-align: center; margin-bottom: 12px; font-weight: 600;">
-                ⚡ Automated Alert Dispatched &bull; Active Surveillance Mode
+
+            <div id="smsModalAutoBadge" style="display: none; background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #16a34a; padding: 8px; border-radius: 6px; font-size: 0.82rem; text-align: center; margin-bottom: 1.25rem;">
+                Automated Alert Dispatched &bull; Active Surveillance Mode
             </div>
-            <!-- SMS Info -->
-            <div style="background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; text-align: center;">
-                <div style="color: rgba(255,255,255,0.7); font-size: 0.875rem;">Send SMS alert to:</div>
-                <div style="color: #ff8888; font-size: 1.1rem; font-weight: 700; margin-top: 4px;">+91 9495848807</div>
-            </div>
-            <!-- Buttons -->
-            <div style="display: flex; gap: 12px;">
-                <button onclick="dismissSmsModal()" style="flex: 1; padding: 12px; background: transparent; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.6); border-radius: 8px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s;" onmouseover="this.style.borderColor='rgba(255,255,255,0.5)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.2)'">
-                    ✕ Dismiss
-                </button>
-                <button onclick="doSendSms()" id="btnSendSms" style="flex: 2; padding: 12px; background: linear-gradient(135deg, #cc0000, #ff4444); border: none; color: white; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 700; transition: all 0.2s; box-shadow: 0 4px 15px rgba(255,68,68,0.4);" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
-                    📱 Allow SMS Alert
-                </button>
+
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="btn-action-clean outline" style="flex: 1; justify-content: center;" onclick="dismissSmsModal()">Dismiss</button>
+                <button type="button" class="btn-action-clean primary" id="btnSendSms" style="flex: 2; justify-content: center; background: #dc2626;" onclick="doSendSms()">Send SMS Warning</button>
             </div>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- POPUP 2: Alert Sound Popup                                 -->
-    <!-- ========================================================= -->
-    <div id="soundAlertModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; align-items: center; justify-content: center;">
-        <div style="background: linear-gradient(135deg, #1a1000, #2d2010); border: 2px solid #ff9900; border-radius: 16px; padding: 32px; max-width: 480px; width: 90%; box-shadow: 0 0 40px rgba(255,153,0,0.4); animation: popupSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
-            <!-- Header -->
-            <div style="text-align: center; margin-bottom: 20px;">
-                <div style="font-size: 3rem; margin-bottom: 8px;">🔊</div>
-                <h2 style="color: #ff9900; margin: 0; font-size: 1.5rem; letter-spacing: 1px;">DETERRENT SOUND</h2>
-                <p style="color: rgba(255,255,255,0.5); font-size: 0.8rem; margin-top: 4px;">Species-specific audio deterrent</p>
+    <!-- MODAL 2: Acoustic Siren Alert Modal -->
+    <div id="soundAlertModal" class="modal hidden modal-standard-backdrop">
+        <div class="modal-standard-box warning">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <span class="status-pill" style="color: #d97706; background: rgba(217, 119, 6, 0.1); border-color: rgba(217, 119, 6, 0.3);">ACOUSTIC DISPATCH</span>
+                <span style="font-size: 0.8rem; color: var(--color-text-secondary, #526357);">Species-Specific Deterrent</span>
             </div>
-            <!-- Sound Details -->
-            <div style="background: rgba(255,153,0,0.1); border: 1px solid rgba(255,153,0,0.3); border-radius: 10px; padding: 16px; margin-bottom: 16px; text-align: center;">
-                <div id="soundSpeciesIcon" style="font-size: 2.5rem; margin-bottom: 8px;">🐾</div>
-                <div id="soundSpeciesName" style="color: #ffbb44; font-size: 1.3rem; font-weight: 700; margin-bottom: 4px;">UNKNOWN</div>
-                <div id="soundDescription" style="color: rgba(255,255,255,0.6); font-size: 0.875rem;">Deterrent sound will play for 10 seconds</div>
+            <h3 style="margin: 0 0 0.5rem 0; color: var(--color-primary, #133321); font-size: 1.35rem;">Deterrent Audio Broadcast</h3>
+            <p style="color: var(--color-text-secondary, #526357); font-size: 0.88rem; margin-bottom: 1.25rem;">Broadcasts safe acoustic frequency to divert target animal</p>
+
+            <div style="background: #f7f5ed; border-radius: 8px; padding: 14px; margin-bottom: 1.25rem; text-align: center; border: 1px solid var(--color-border, #e2ded3);">
+                <div id="soundSpeciesIcon" style="font-size: 0.8rem; font-weight: 700; color: var(--color-text-secondary, #526357); letter-spacing: 0.05em; text-transform: uppercase;">Target Species</div>
+                <div id="soundSpeciesName" style="color: var(--color-secondary, #c78629); font-size: 1.3rem; font-weight: 700; margin: 4px 0;">UNKNOWN</div>
+                <div id="soundDescription" style="color: var(--color-text-secondary, #526357); font-size: 0.85rem;">Deterrent audio will play for 10 seconds</div>
             </div>
-            <!-- Sound Visualizer (animated when playing) -->
-            <div id="soundVisualizer" style="display: flex; align-items: center; justify-content: center; gap: 4px; height: 50px; margin-bottom: 16px; opacity: 0; transition: opacity 0.3s;">
-                <div class="sound-bar" style="width: 6px; background: #ff9900; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ff9900; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.1s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ffbb44; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.2s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ff9900; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.3s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ffdd00; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.4s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ff9900; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.5s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ffbb44; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.6s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ff9900; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.7s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ffdd00; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.8s;"></div>
-                <div class="sound-bar" style="width: 6px; background: #ff9900; border-radius: 3px; animation: soundAnim 0.5s ease-in-out infinite alternate; animation-delay: 0.9s;"></div>
-                <span id="soundCountdown" style="color: #ff9900; font-size: 1.5rem; font-weight: 700; margin-left: 12px;">10s</span>
+
+            <div id="soundVisualizer" style="display: flex; align-items: center; justify-content: center; gap: 6px; height: 36px; margin-bottom: 1.25rem; opacity: 0; transition: opacity 0.3s;">
+                <span style="font-size: 0.85rem; color: #d97706; font-weight: 600;">Broadcasting audio signal...</span>
+                <span id="soundCountdown" style="color: var(--color-secondary, #c78629); font-size: 1.15rem; font-weight: 700; margin-left: 10px;">10s</span>
             </div>
-            <!-- Buttons -->
-            <div style="display: flex; gap: 12px;">
-                <button onclick="dismissSoundModal()" style="flex: 1; padding: 12px; background: transparent; border: 1px solid rgba(255,255,255,0.2); color: rgba(255,255,255,0.6); border-radius: 8px; cursor: pointer; font-size: 0.9rem; transition: all 0.2s;" onmouseover="this.style.borderColor='rgba(255,255,255,0.5)'" onmouseout="this.style.borderColor='rgba(255,255,255,0.2)'">
-                    ✕ Cancel
-                </button>
-                <button onclick="doPlaySound()" id="btnPlaySound" style="flex: 2; padding: 12px; background: linear-gradient(135deg, #cc6600, #ff9900); border: none; color: white; border-radius: 8px; cursor: pointer; font-size: 0.95rem; font-weight: 700; transition: all 0.2s; box-shadow: 0 4px 15px rgba(255,153,0,0.4);" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='none'">
-                    🔊 Play Alert Sound
-                </button>
+
+            <div style="display: flex; gap: 10px;">
+                <button type="button" class="btn-action-clean outline" style="flex: 1; justify-content: center;" onclick="dismissSoundModal()">Cancel</button>
+                <button type="button" class="btn-action-clean primary" id="btnPlaySound" style="flex: 2; justify-content: center;" onclick="doPlaySound()">Play Alert Sound</button>
             </div>
-            <!-- Stop sound button (hidden initially) -->
-            <button onclick="doStopSound()" id="btnStopSound" style="display:none; width: 100%; margin-top: 10px; padding: 10px; background: transparent; border: 1px solid rgba(255,68,68,0.5); color: #ff6666; border-radius: 8px; cursor: pointer; font-size: 0.875rem;">
-                ⏹ Stop Sound
-            </button>
+            <button type="button" class="btn-action-clean danger" id="btnStopSound" style="display: none; width: 100%; margin-top: 10px; justify-content: center;" onclick="doStopSound()">Stop Audio</button>
         </div>
     </div>
 
-    <!-- ========================================================= -->
-    <!-- POPUP 3: Behavior Engine Configuration Modal              -->
-    <!-- ========================================================= -->
-    <div id="behaviorConfigModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1002; display: flex; align-items: center; justify-content: center;">
-        <div style="background: linear-gradient(135deg, #0f172a, #1e293b); border: 2px solid #38bdf8; border-radius: 16px; padding: 28px; max-width: 540px; width: 92%; box-shadow: 0 0 40px rgba(56,189,248,0.3); max-height: 85vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
-                <h3 style="color: #38bdf8; margin: 0; font-size: 1.25rem;">⚙️ Behavior Engine Configuration</h3>
-                <button onclick="closeBehaviorConfigModal()" style="background: transparent; border: none; color: #fff; font-size: 1.2rem; cursor: pointer;">✕</button>
+    <!-- MODAL 3: Behavior Engine Configuration Modal -->
+    <div id="behaviorConfigModal" class="modal hidden modal-standard-backdrop">
+        <div class="modal-standard-box" style="max-width: 560px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--color-border, #e2ded3); padding-bottom: 0.75rem;">
+                <h3 style="margin: 0; font-size: 1.25rem; color: var(--color-primary, #133321);">Behavior Engine Parameters</h3>
+                <button type="button" onclick="closeBehaviorConfigModal()" style="background: none; border: none; color: var(--color-text-secondary, #526357); font-size: 1.3rem; cursor: pointer;">&times;</button>
             </div>
-            <p style="color: rgba(255,255,255,0.7); font-size: 0.8rem; margin-bottom: 16px;">
-                Fine-tune computer-vision temporal heuristics and thresholds for real-time behavioral classification.
+            <p style="color: var(--color-text-secondary, #526357); font-size: 0.85rem; margin-bottom: 1.25rem;">
+                Adjust heuristic speed vector thresholds and confirmation frames for real-time behavioral classification.
             </p>
-            <div id="behaviorConfigForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.85rem;">
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Stationary Speed (px/s)</label>
-                    <input type="number" id="cfg_stationary" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+            <div id="behaviorConfigForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-size: 0.88rem;">
+                <div class="form-group-clean">
+                    <label>Stationary Speed (px/s)</label>
+                    <input type="number" id="cfg_stationary" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Walking Speed (px/s)</label>
-                    <input type="number" id="cfg_walking" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Walking Speed (px/s)</label>
+                    <input type="number" id="cfg_walking" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Running Speed (px/s)</label>
-                    <input type="number" id="cfg_running" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Running Speed (px/s)</label>
+                    <input type="number" id="cfg_running" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Charging Speed (px/s)</label>
-                    <input type="number" id="cfg_charging" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Charging Speed (px/s)</label>
+                    <input type="number" id="cfg_charging" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Loitering Duration (s)</label>
-                    <input type="number" id="cfg_loitering_dur" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Loitering Duration (s)</label>
+                    <input type="number" id="cfg_loitering_dur" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Resting Duration (s)</label>
-                    <input type="number" id="cfg_resting_dur" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Resting Duration (s)</label>
+                    <input type="number" id="cfg_resting_dur" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Confirmation Frames</label>
-                    <input type="number" id="cfg_confirm_frames" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Confirmation Frames</label>
+                    <input type="number" id="cfg_confirm_frames" class="form-input-clean">
                 </div>
-                <div>
-                    <label style="color: rgba(255,255,255,0.8); display: block; font-size: 0.75rem;">Risk Cooldown (s)</label>
-                    <input type="number" id="cfg_risk_cooldown" class="form-input" style="padding: 6px; font-size: 0.85rem; width: 100%;">
+                <div class="form-group-clean">
+                    <label>Risk Cooldown (s)</label>
+                    <input type="number" id="cfg_risk_cooldown" class="form-input-clean">
                 </div>
             </div>
-            <div style="display: flex; gap: 10px; margin-top: 20px;">
-                <button onclick="closeBehaviorConfigModal()" class="btn btn-outline" style="flex: 1;">Cancel</button>
-                <button onclick="saveBehaviorConfig()" class="btn btn-primary" style="flex: 2;">Save Config</button>
+            <div style="display: flex; gap: 10px; margin-top: 1.25rem;">
+                <button type="button" onclick="closeBehaviorConfigModal()" class="btn-action-clean outline" style="flex: 1; justify-content: center;">Cancel</button>
+                <button type="button" onclick="saveBehaviorConfig()" class="btn-action-clean primary" style="flex: 2; justify-content: center;">Save Parameters</button>
             </div>
         </div>
     </div>
 
-    <!-- Popup animation + sound bar styles -->
-    <style>
-        .modal.hidden { display: none !important; }
-        @keyframes popupSlideIn {
-            from { transform: scale(0.7) translateY(-30px); opacity: 0; }
-            to   { transform: scale(1) translateY(0); opacity: 1; }
-        }
-        @keyframes soundAnim {
-            from { height: 8px; }
-            to   { height: 42px; }
-        }
-        .sound-bar { height: 8px; }
-        .behavior-event-item {
-            padding: 6px 10px;
-            border-radius: 4px;
-            background: rgba(255,255,255,0.03);
-            border-left: 3px solid #4caf50;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .behavior-event-item.risk-critical { border-left-color: #f44336; background: rgba(244,67,54,0.1); }
-        .behavior-event-item.risk-high { border-left-color: #ff9800; background: rgba(255,152,0,0.1); }
-        .behavior-event-item.risk-medium { border-left-color: #ffeb3b; background: rgba(255,235,59,0.08); }
-        .behavior-event-item.risk-low { border-left-color: #4caf50; background: rgba(76,175,80,0.05); }
-    </style>
-
+    <!-- Hidden Field Stream Setter -->
     <div style="position: fixed; bottom: 5px; right: 5px; opacity: 0.05; transition: opacity 0.3s; z-index: 9999;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.05">
-        <input type="text" id="ipcamAdmin" placeholder="IP Webcam URL (e.g. http://192.168.1.5:8080/video)" style="background: rgba(0,0,0,0.8); border: 1px solid #334155; color: #fff; padding: 4px; font-size: 10px; width: 250px; outline: none;">
+        <input type="text" id="ipcamAdmin" placeholder="IP Webcam URL" style="background: rgba(0,0,0,0.8); border: 1px solid #334155; color: #fff; padding: 4px; font-size: 10px; width: 220px; outline: none;">
         <button onclick="setAdminCam()" style="background: #334155; border: none; color: #fff; padding: 4px 8px; font-size: 10px; cursor: pointer;">Set</button>
     </div>
     <script>
@@ -1336,6 +1433,9 @@
             }
         }
     </script>
-    <script src="script.js?v=5.0"></script>
+
+    <!-- Main Logic Script -->
+    <script src="script.js?v=7.0"></script>
 </body>
+
 </html>

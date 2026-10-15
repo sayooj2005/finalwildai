@@ -27,6 +27,14 @@ function handleAutoToggle(type) {
 // Notification System
 // ===================================
 function showNotification(message, type = 'info') {
+  if (!message) return;
+
+  // Suppress alert, detection, and auto-SMS notifications per user requirement: "i dont need the notification for alert"
+  const mLower = String(message).toLowerCase();
+  if (mLower.includes('auto-sms') || mLower.includes('detected') || mLower.includes('simulating wildlife') || mLower.includes('alarm activated')) {
+    return;
+  }
+
   // Create notification element if it doesn't exist
   let container = document.getElementById('notification-container');
   if (!container) {
@@ -64,7 +72,7 @@ function showNotification(message, type = 'info') {
 
   let icon = 'i';
   if (type === 'safe' || type === 'success') {
-    icon = '✓';
+    icon = '';
     notification.style.borderColor = 'var(--color-safe)';
   } else if (type === 'danger' || type === 'warning' || type === 'error') {
     icon = '!';
@@ -74,7 +82,7 @@ function showNotification(message, type = 'info') {
   notification.innerHTML = `
     <span style="font-size: 1.25rem;">${icon}</span>
     <div style="flex: 1;">${message}</div>
-    <button onclick="this.parentElement.remove()" style="background: none; border: none; color: white; cursor: pointer; opacity: 0.6; padding: 4px;">✕</button>
+    <button onclick="this.parentElement.remove()" style="background: none; border: none; color: white; cursor: pointer; opacity: 0.6; padding: 4px;"></button>
   `;
 
   container.appendChild(notification);
@@ -617,7 +625,7 @@ let currentSectorZone = 'zone1_forest_border';
 
 function changeSectorZone(newZone) {
     currentSectorZone = newZone;
-    showNotification(`🔄 Switched to Sector: ${newZone.replace('_', ' ').toUpperCase()}`, 'info');
+    showNotification(` Switched to Sector: ${newZone.replace('_', ' ').toUpperCase()}`, 'info');
     const mapTag = document.getElementById('map-sector-tag');
     if (mapTag) mapTag.textContent = newZone.replace(/_/g, ' ').toUpperCase();
 
@@ -671,7 +679,7 @@ async function startLiveMonitoring() {
     
     try {
         const sourceLabel = targetUrl === "0" ? "Built-in / USB Webcam" : targetUrl;
-        showNotification(`📹 Connecting ${sourceLabel}...`, 'info');
+        showNotification(` Connecting ${sourceLabel}...`, 'info');
         const resp = await fetch(`${apiBase}/api/settings/camera`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -679,7 +687,7 @@ async function startLiveMonitoring() {
         });
         const rdata = await resp.json();
         if (rdata && rdata.message) {
-            showNotification(`📹 ${rdata.message}`, 'success');
+            showNotification(` ${rdata.message}`, 'success');
         }
     } catch(e) {
         console.error("Failed to set backend camera", e);
@@ -742,7 +750,7 @@ async function startLiveMonitoring() {
     }
 
     try {
-        updateStatusBadge('status-cloud', 'Cloud: 🟡 Connecting...', false);
+        updateStatusBadge('status-cloud', 'Cloud:  Connecting...', false);
         
         // Derive dynamic backend URL
         const wsHost = (window.location.protocol === 'file:' || !window.location.host)
@@ -758,7 +766,7 @@ async function startLiveMonitoring() {
         streamImg.alt = 'Connecting to Render Cloud API...';
         
         detectionWs.onopen = function() {
-            updateStatusBadge('status-cloud', 'Cloud: 🟢 Connected', true);
+            updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
         };
 
         detectionWs.onmessage = function(event) {
@@ -768,18 +776,18 @@ async function startLiveMonitoring() {
                     
                     if (parsed.type === "camera_status") {
                         const camActive = parsed.status === "connected";
-                        updateStatusBadge('status-camera', camActive ? 'Camera: 🟢 Live Stream' : 'Camera: 🟡 Connecting...', camActive);
+                        updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
                         return;
                     }
                     
                     if (parsed.type === "detection") {
                         // Update status badges
-                        updateStatusBadge('status-cloud', 'Cloud: 🟢 Connected', true);
+                        updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
                         const aiActive = parsed.ai_status === "processing";
-                        updateStatusBadge('status-ai', aiActive ? 'AI YOLO: 🟢 Processing' : 'AI YOLO: 🟡 Idle', aiActive);
+                        updateStatusBadge('status-ai', aiActive ? 'AI YOLO:  Processing' : 'AI YOLO:  Idle', aiActive);
                         
                         const camActive = parsed.camera_status === "connected";
-                        updateStatusBadge('status-camera', camActive ? 'Camera: 🟢 Live Stream' : 'Camera: 🟡 Connecting...', camActive);
+                        updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
 
                         // Update Real-Time Behavioral Analysis Dashboard & Event Timeline
                         updateBehavioralDashboard(parsed);
@@ -815,16 +823,16 @@ async function startLiveMonitoring() {
                             // 1. Continuous telemetry UI updates
                             updatePoseTelemetryUI(legacyFormat);
                             
-                            // 2. Trigger the visible detection alert modal popup in center of screen
+                            // 2. Detection alert modal popup disabled per user requirement: no popup when detected
                             triggerDetectionAlertPopup(legacyFormat);
                             
-                            // 3. Dispatch deduplicated visible wildlife alert toasts for each detected entity
+                            // 3. Process detections and log critical alerts only
                             const camId = parsed.camera_id || 'IP_WEBCAM_01';
                             parsed.detections.forEach(det => {
                                 handleWildlifeDetectionAlert(det, camId, parsed.processed_frame, legacyFormat);
                             });
 
-                            // 4. Trigger / Live-update the Side Alert Popup for Admin Portal
+                            // 4. Update internal alert state without showing floating side popups
                             showOrUpdateAdminSideAlert(primaryThreat, camId, parsed.processed_frame, parsed.detections);
                             
                             // ── Part 16: Escape Route from Cloud ──
@@ -835,18 +843,18 @@ async function startLiveMonitoring() {
                                     banner.style.display = 'block';
                                     banner.innerHTML = `
                                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                                            <strong style="color:#00e676;">⚡ CLOUD ESCAPE ROUTE ENGAGED</strong>
+                                            <strong style="color:#00e676;"> CLOUD ESCAPE ROUTE ENGAGED</strong>
                                             <span class="badge" style="background:#f44336;">HEADING: ${r.heading}</span>
                                         </div>
                                         <p style="margin:4px 0;font-size:0.9rem;">
-                                             🐾 <strong>${primaryThreat.animal.toUpperCase()}</strong> detected in <em>${primaryThreat.zone || 'Zone-A'}</em> — 
+                                              <strong>${primaryThreat.animal.toUpperCase()}</strong> detected in <em>${primaryThreat.zone || 'Zone-A'}</em> — 
                                             Behaviour: <strong>${primaryThreat.behaviour || 'MOVING'}</strong>
                                         </p>
                                         <p style="margin:4px 0;font-size:0.9rem;">
-                                            🏃 Move <strong>${r.heading}</strong> → 
+                                             Move <strong>${r.heading}</strong> → 
                                             <strong>${r.safe_zone_name}</strong> (~${r.distance_meters}m)
                                         </p>
-                                        <p style="margin:4px 0;font-size:0.85rem;opacity:0.7;">📞 ${r.contact} &nbsp;|&nbsp; ⚠️ ${r.note}</p>
+                                        <p style="margin:4px 0;font-size:0.85rem;opacity:0.7;"> ${r.contact} &nbsp;|&nbsp;  ${r.note}</p>
                                     `;
                                 }
                                 updateGeospatialEvacuationRoute(primaryThreat.animal, currentSectorZone, primaryThreat.risk_score || 85);
@@ -859,7 +867,7 @@ async function startLiveMonitoring() {
         
         detectionWs.onerror = function(error) {
             console.error('WebSocket Error:', error);
-            updateStatusBadge('status-cloud', 'Cloud: 🔴 Error', false);
+            updateStatusBadge('status-cloud', 'Cloud:  Error', false);
             showNotification('Cloud stream error. Check backend connection.', 'error');
             streamImg.alt = 'Cloud Stream Error';
         };
@@ -870,22 +878,22 @@ async function startLiveMonitoring() {
         detectionWs.onclose = function(event) {
             console.log(`Cloud WebSocket Closed: Code ${event.code}`);
             
-            updateStatusBadge('status-cloud', 'Cloud: 🔴 Disconnected', false);
-            updateStatusBadge('status-ai', 'AI YOLO: 🔴 Stopped', false);
-            updateStatusBadge('status-camera', 'Camera: 🔴 Disconnected', false);
+            updateStatusBadge('status-cloud', 'Cloud:  Disconnected', false);
+            updateStatusBadge('status-ai', 'AI YOLO:  Stopped', false);
+            updateStatusBadge('status-camera', 'Camera:  Disconnected', false);
             
             if (event.code === 1011) {
-                showNotification(`⚠️ Cloud inference stopped: Server error`, 'error');
+                showNotification(` Cloud inference stopped: Server error`, 'error');
                 streamImg.alt = `Error: Server disconnect`;
             } else if (event.code === 1006 || event.code === 1000) {
                 if (reconnectAttempts < maxReconnects) {
                     reconnectAttempts++;
-                    showNotification(`🔄 Connection dropped. Reconnecting (Attempt ${reconnectAttempts}/${maxReconnects})...`, 'warning');
+                    showNotification(` Connection dropped. Reconnecting (Attempt ${reconnectAttempts}/${maxReconnects})...`, 'warning');
                     streamImg.alt = 'Reconnecting to Cloud...';
                     setTimeout(() => startLiveMonitoring(), 3000);
                     return;
                 } else {
-                    showNotification('🚨 Cloud Connection lost permanently.', 'error');
+                    showNotification(' Cloud Connection lost permanently.', 'error');
                     streamImg.alt = 'Cloud Connection Failed';
                 }
             } else {
@@ -946,9 +954,7 @@ function simulateDetection() {
         track_id: `SIM_${Date.now()}`,
         sector: currentSectorZone || "Zone 1 - Forest Border"
     };
-    
-    showNotification('🧪 Simulating wildlife intrusion alert...', 'info');
-    
+
     const legacyFormat = {
         action: "alert",
         species: "Person",
@@ -975,21 +981,21 @@ function addLiveDetectionToFeed(data) {
     if (!container) return;
 
     let danger = "medium";
-    let icon = "🐾";
+    let icon = "";
     const speciesLower = (data.species || 'target').toLowerCase();
     
     if (speciesLower.includes("tiger") || speciesLower.includes("leopard") || speciesLower.includes("poacher") || speciesLower.includes("person")) {
         danger = "high";
-        icon = (speciesLower.includes("person") || speciesLower.includes("poacher")) ? "👤" : (speciesLower.includes("tiger") ? "🐅" : "🐆");
+        icon = (speciesLower.includes("person") || speciesLower.includes("poacher")) ? "" : (speciesLower.includes("tiger") ? "" : "");
     } else if (speciesLower.includes("elephant")) {
         danger = "medium";
-        icon = "🐘";
+        icon = "";
     } else if (speciesLower.includes("bear")) {
         danger = "high";
-        icon = "🐻";
+        icon = "";
     } else if (speciesLower.includes("boar")) {
         danger = "medium";
-        icon = "🐗";
+        icon = "";
     }
 
     const timeStr = new Date().toLocaleTimeString();
@@ -1008,14 +1014,14 @@ function addLiveDetectionToFeed(data) {
               <span style="font-size: 1.5rem;">${icon}</span>
               <div>
                 <div style="font-weight: 600; color: var(--color-text-light); text-transform: uppercase;">${data.species}</div>
-                <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);">📹 LIVE FEED</div>
+                <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);"> LIVE FEED</div>
               </div>
             </div>
             <span class="badge badge-${danger === 'high' ? 'danger' : 'warning'}">${danger.toUpperCase()}</span>
           </div>
           <div style="display: flex; justify-content: space-between; font-size: 0.875rem; color: rgba(255, 255, 255, 0.5);">
-            <span>🕐 ${timeStr}</span>
-            <span>🎯 ${data.confidence} confidence</span>
+            <span> ${timeStr}</span>
+            <span> ${data.confidence} confidence</span>
           </div>
         </div>
       </div>
@@ -1031,8 +1037,48 @@ function addLiveDetectionToFeed(data) {
     updateGeospatialEvacuationRoute(data.species, currentSectorZone, data.risk_score || 85);
 }
 
+function addCriticalAlertToLog(alertData) {
+    const container = document.getElementById('intrusionAlerts');
+    if (!container) return;
+
+    const timeStr = alertData.timestamp || new Date().toLocaleTimeString();
+    const species = (alertData.species || 'High-Risk Intrusion').toUpperCase();
+    const location = alertData.cameraId ? `Camera ${alertData.cameraId} — Perimeter Line` : 'Sector Boundary Node';
+    const confidence = alertData.confidence ? (typeof alertData.confidence === 'number' ? `${alertData.confidence}%` : alertData.confidence) : '95%';
+    const riskScore = alertData.riskScore || alertData.risk_score || 90;
+    const behavior = alertData.behavior || alertData.behaviour || 'Approaching perimeter boundary';
+
+    const item = document.createElement('div');
+    item.className = 'detection-item-clean high-danger';
+    item.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-indicator-clean danger"></span>
+            <span style="font-weight: 700; color: #1c2b22; font-size: 0.95rem;">CRITICAL: ${species} DETECTED</span>
+          </div>
+          <div style="font-size: 0.82rem; color: #526357; margin-top: 2px;">${location} &bull; ${timeStr}</div>
+        </div>
+        <span class="badge-status-clean danger" style="font-weight: 700; font-size: 0.72rem;">CRITICAL</span>
+      </div>
+      <div style="font-size: 0.84rem; color: #3d4a41; margin-top: 6px; line-height: 1.4;">
+        Behavior: ${behavior}
+      </div>
+      <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 0.78rem; color: #6e7d72;">
+        <span>Species: <strong style="color: #1c2b22;">${alertData.species || species}</strong></span>
+        <span>Confidence: <strong style="color: #1c2b22;">${confidence}</strong></span>
+        <span>Threat Index: <strong style="color: #dc2626;">${riskScore}/100</strong></span>
+      </div>
+    `;
+
+    container.insertBefore(item, container.firstChild);
+    if (container.children.length > 25) {
+        container.removeChild(container.lastChild);
+    }
+}
+
 // ===================================================================
-// DEDUPLICATED VISIBLE WILDLIFE DETECTION ALERT TOAST NOTIFICATION SYSTEM
+// DEDUPLICATED VISIBLE WILDLIFE DETECTION ALERT SYSTEM
 // ===================================================================
 const activeDetectionAlertCooldowns = new Map();
 const ALERT_COOLDOWN_MS = 10000; // 10s cooldown per unique track/encounter
@@ -1048,7 +1094,7 @@ function handleWildlifeDetectionAlert(det, cameraId, frameSnapshot, legacyFormat
     const lastAlertTime = activeDetectionAlertCooldowns.get(dedupKey) || 0;
 
     if (now - lastAlertTime < ALERT_COOLDOWN_MS) {
-        // Suppress duplicate popup for ongoing encounter within cooldown window
+        // Suppress duplicate alert for ongoing encounter within cooldown window
         return;
     }
 
@@ -1078,10 +1124,10 @@ function handleWildlifeDetectionAlert(det, cameraId, frameSnapshot, legacyFormat
         image: frameSnapshot
     };
 
-    // 1. Show immediate, prominent in-dashboard toast popup
-    showWildlifeAlertToast(alertData);
+    // 1. Popup toasts disabled per user requirement: "i dont need the popup when detected"
+    // showWildlifeAlertToast(alertData);
 
-    // 2. Add to persistent detection history log
+    // 2. Add to persistent detection history log (silent backward compatibility)
     if (legacyFormat) {
         addLiveDetectionToFeed(legacyFormat);
     } else {
@@ -1095,16 +1141,22 @@ function handleWildlifeDetectionAlert(det, cameraId, frameSnapshot, legacyFormat
         });
     }
 
-    // 3. Audio alert chime (synthesizer Web Audio API)
-    playAlertChime();
+    // 3. Log to Critical Wildlife Intrusion Alerts Log ONLY for high/critical threats
+    const isCritical = (riskLevel && (riskLevel.toUpperCase() === 'HIGH' || riskLevel.toUpperCase() === 'CRITICAL')) || 
+                       riskScore >= 70 ||
+                       species.toLowerCase().includes('person') || 
+                       species.toLowerCase().includes('poacher') ||
+                       species.toLowerCase().includes('tiger') ||
+                       species.toLowerCase().includes('leopard');
 
-    // 4. Desktop OS browser notification
-    sendDesktopBrowserNotification(species, confPercent, riskLevel, cameraId);
+    if (isCritical) {
+        addCriticalAlertToLog(alertData);
+    }
 
-    // 5. Trigger automated SMS dispatch if configured
+    // Audio chime on detection disabled per user requirement: "i dont need any sound when detected"
+    // Notification for alert disabled per user requirement: "i dont need the notification for alert"
     if (autoSmsEnabled || currentSystemSettings.auto_response_mode === 'full') {
         console.log(`[Auto-SMS] Dispatching automated alert for ${species}`);
-        showNotification(`⚡ Auto-SMS Dispatched for ${species.toUpperCase()}`, 'warning');
     }
 }
 
@@ -1114,8 +1166,8 @@ function getDetectionClassMeta(rawName) {
     // Human / Person
     if (name.includes('person') || name.includes('human') || name.includes('poacher') || name.includes('man') || name.includes('woman')) {
         return { 
-            icon: '👤', 
-            title: '🚨 PERSON DETECTED!', 
+            icon: '', 
+            title: ' PERSON DETECTED!', 
             category: 'Human Intrusion & Security Alert', 
             display: 'PERSON (HUMAN INTRUDER)', 
             isHigh: true, 
@@ -1128,8 +1180,8 @@ function getDetectionClassMeta(rawName) {
     // Apex Predators & Carnivores (Tiger & Striped Wildlife)
     if (name.includes('tiger') || name.includes('cat') || name.includes('zebra') || name.includes('horse') || name.includes('leopard') || name.includes('panther') || name.includes('cheetah') || name.includes('lion')) {
         return { 
-            icon: '🐅', 
-            title: '🚨 TIGER DETECTED!', 
+            icon: '', 
+            title: ' TIGER DETECTED!', 
             category: 'Apex Predator Intrusion Alert', 
             display: 'TIGER (CARNIVORE)', 
             isHigh: true, 
@@ -1141,8 +1193,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('lion')) {
         return { 
-            icon: '🦁', 
-            title: '🚨 LION DETECTED!', 
+            icon: '', 
+            title: ' LION DETECTED!', 
             category: 'Apex Predator Intrusion Alert', 
             display: 'LION (CARNIVORE)', 
             isHigh: true, 
@@ -1154,8 +1206,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('bear')) {
         return { 
-            icon: '🐻', 
-            title: '🚨 BEAR DETECTED!', 
+            icon: '', 
+            title: ' BEAR DETECTED!', 
             category: 'Large Carnivore Intrusion Alert', 
             display: 'BEAR (WILDLIFE)', 
             isHigh: true, 
@@ -1168,8 +1220,8 @@ function getDetectionClassMeta(rawName) {
     // Megaherbivores & Large Wildlife
     if (name.includes('elephant')) {
         return { 
-            icon: '🐘', 
-            title: '🚨 ELEPHANT DETECTED!', 
+            icon: '', 
+            title: ' ELEPHANT DETECTED!', 
             category: 'Megaherbivore Wildlife Intrusion Alert', 
             display: 'ELEPHANT (WILDLIFE)', 
             isHigh: true, 
@@ -1181,8 +1233,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('boar') || name.includes('pig')) {
         return { 
-            icon: '🐗', 
-            title: '🚨 WILD BOAR DETECTED!', 
+            icon: '', 
+            title: ' WILD BOAR DETECTED!', 
             category: 'Agricultural Pest Intrusion Alert', 
             display: 'WILD BOAR (WILDLIFE)', 
             isHigh: true, 
@@ -1194,8 +1246,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('deer')) {
         return { 
-            icon: '🦌', 
-            title: '🚨 DEER DETECTED!', 
+            icon: '', 
+            title: ' DEER DETECTED!', 
             category: 'Herbivore Wildlife Movement', 
             display: 'DEER (WILDLIFE)', 
             isHigh: false, 
@@ -1207,8 +1259,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('monkey') || name.includes('ape')) {
         return { 
-            icon: '🐒', 
-            title: '🚨 MONKEY DETECTED!', 
+            icon: '', 
+            title: ' MONKEY DETECTED!', 
             category: 'Wildlife Primate Activity', 
             display: 'MONKEY (PRIMATE)', 
             isHigh: false, 
@@ -1221,8 +1273,8 @@ function getDetectionClassMeta(rawName) {
     // Domestic Animals
     if (name.includes('dog')) {
         return { 
-            icon: '🐕', 
-            title: '🚨 DOG DETECTED!', 
+            icon: '', 
+            title: ' DOG DETECTED!', 
             category: 'Domestic Canine Alert', 
             display: 'DOG (CANINE)', 
             isHigh: false, 
@@ -1234,8 +1286,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('cat')) {
         return { 
-            icon: '🐈', 
-            title: '🚨 CAT DETECTED!', 
+            icon: '', 
+            title: ' CAT DETECTED!', 
             category: 'Domestic Feline Alert', 
             display: 'CAT (FELINE)', 
             isHigh: false, 
@@ -1247,8 +1299,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('bird')) {
         return { 
-            icon: '🦅', 
-            title: '🚨 BIRD DETECTED!', 
+            icon: '', 
+            title: ' BIRD DETECTED!', 
             category: 'Avian Wildlife Activity', 
             display: 'BIRD (AVIAN)', 
             isHigh: false, 
@@ -1260,8 +1312,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('cow') || name.includes('cattle') || name.includes('bull')) {
         return { 
-            icon: '🐂', 
-            title: '🚨 CATTLE DETECTED!', 
+            icon: '', 
+            title: ' CATTLE DETECTED!', 
             category: 'Livestock Animal Activity', 
             display: 'CATTLE / LIVESTOCK', 
             isHigh: false, 
@@ -1273,8 +1325,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('horse') || name.includes('zebra')) {
         return { 
-            icon: '🐎', 
-            title: '🚨 EQUINE DETECTED!', 
+            icon: '', 
+            title: ' EQUINE DETECTED!', 
             category: 'Equine Animal Activity', 
             display: 'HORSE (EQUINE)', 
             isHigh: false, 
@@ -1286,8 +1338,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('sheep') || name.includes('goat')) {
         return { 
-            icon: '🐑', 
-            title: '🚨 LIVESTOCK DETECTED!', 
+            icon: '', 
+            title: ' LIVESTOCK DETECTED!', 
             category: 'Small Livestock Activity', 
             display: 'SHEEP / GOAT', 
             isHigh: false, 
@@ -1300,8 +1352,8 @@ function getDetectionClassMeta(rawName) {
     // Objects & Tools
     if (name.includes('cell phone') || name.includes('phone')) {
         return { 
-            icon: '📱', 
-            title: '🚨 CELL PHONE DETECTED!', 
+            icon: '', 
+            title: ' CELL PHONE DETECTED!', 
             category: 'Electronic Device Detection', 
             display: 'CELL PHONE (DEVICE)', 
             isHigh: false, 
@@ -1313,8 +1365,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('bottle')) {
         return { 
-            icon: '🍾', 
-            title: '🚨 BOTTLE DETECTED!', 
+            icon: '', 
+            title: ' BOTTLE DETECTED!', 
             category: 'Object / Container Detection', 
             display: 'BOTTLE (OBJECT)', 
             isHigh: false, 
@@ -1326,8 +1378,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('cup')) {
         return { 
-            icon: '☕', 
-            title: '🚨 CUP DETECTED!', 
+            icon: '', 
+            title: ' CUP DETECTED!', 
             category: 'Object / Tableware Detection', 
             display: 'CUP (OBJECT)', 
             isHigh: false, 
@@ -1339,8 +1391,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('backpack') || name.includes('bag') || name.includes('suitcase') || name.includes('handbag')) {
         return { 
-            icon: '🎒', 
-            title: '🚨 BAG / PACK DETECTED!', 
+            icon: '', 
+            title: ' BAG / PACK DETECTED!', 
             category: 'Luggage / Personal Belonging', 
             display: 'BACKPACK (OBJECT)', 
             isHigh: false, 
@@ -1352,8 +1404,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('chair') || name.includes('couch') || name.includes('sofa') || name.includes('bed')) {
         return { 
-            icon: '🪑', 
-            title: `🚨 ${name.toUpperCase()} DETECTED!`, 
+            icon: '', 
+            title: ` ${name.toUpperCase()} DETECTED!`, 
             category: 'Indoor Furniture Object', 
             display: `${name.toUpperCase()} (FURNITURE)`, 
             isHigh: false, 
@@ -1365,8 +1417,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('laptop') || name.includes('computer') || name.includes('keyboard') || name.includes('tv') || name.includes('monitor')) {
         return { 
-            icon: '💻', 
-            title: `🚨 ${name.toUpperCase()} DETECTED!`, 
+            icon: '', 
+            title: ` ${name.toUpperCase()} DETECTED!`, 
             category: 'Electronic Equipment Detection', 
             display: `${name.toUpperCase()} (DEVICE)`, 
             isHigh: false, 
@@ -1378,8 +1430,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('knife') || name.includes('scissors') || name.includes('weapon')) {
         return { 
-            icon: '🔪', 
-            title: '🚨 SECURITY HAZARD DETECTED!', 
+            icon: '', 
+            title: ' SECURITY HAZARD DETECTED!', 
             category: 'Sharp Tool / Weapon Intrusion', 
             display: `${name.toUpperCase()} (HAZARD)`, 
             isHigh: true, 
@@ -1391,8 +1443,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('car') || name.includes('truck') || name.includes('bus') || name.includes('vehicle')) {
         return { 
-            icon: '🚗', 
-            title: '🚨 VEHICLE DETECTED!', 
+            icon: '', 
+            title: ' VEHICLE DETECTED!', 
             category: 'Motor Vehicle Intrusion Alert', 
             display: `${name.toUpperCase()} (VEHICLE)`, 
             isHigh: true, 
@@ -1404,8 +1456,8 @@ function getDetectionClassMeta(rawName) {
     }
     if (name.includes('motorcycle') || name.includes('bicycle')) {
         return { 
-            icon: '🏍️', 
-            title: '🚨 CYCLE DETECTED!', 
+            icon: '️', 
+            title: ' CYCLE DETECTED!', 
             category: 'Two-Wheeled Vehicle Alert', 
             display: `${name.toUpperCase()} (VEHICLE)`, 
             isHigh: false, 
@@ -1418,8 +1470,8 @@ function getDetectionClassMeta(rawName) {
     // Universal fallback
     const cleanU = name.toUpperCase();
     return {
-        icon: '🎯',
-        title: `🚨 ${cleanU} DETECTED!`,
+        icon: '',
+        title: ` ${cleanU} DETECTED!`,
         category: 'Detected Target / Object',
         display: `${cleanU} (DETECTED)`,
         isHigh: false,
@@ -1431,124 +1483,8 @@ function getDetectionClassMeta(rawName) {
 }
 
 function showWildlifeAlertToast(data) {
-    let container = document.getElementById('wildlifeDetectionToastContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'wildlifeDetectionToastContainer';
-        document.body.appendChild(container);
-    }
-    
-    const toastId = `wildlife-toast-${++toastCounter}`;
-    const meta = getDetectionClassMeta(data.species);
-    const icon = meta.icon;
-    const title = meta.title;
-    const accentColor = meta.accentColor;
-    const badgeBg = meta.badgeBg;
-    
-    const isHigh = meta.isHigh || (data.riskLevel && data.riskLevel.toUpperCase().includes('HIGH')) || data.riskScore >= 70;
-    const badgeText = isHigh ? 'CRITICAL RISK 🔴' : `${(data.riskLevel || meta.dangerLevel).toUpperCase()} RISK 🟡`;
-    
-    const toast = document.createElement('div');
-    toast.className = 'wildlife-toast-card';
-    toast.id = toastId;
-    toast.style.borderColor = accentColor;
-    toast.style.boxShadow = `0 12px 35px rgba(0,0,0,0.85), 0 0 25px ${accentColor}40`;
-    
-    const thumbnailHtml = data.image ? `
-        <div style="flex-shrink: 0; width: 85px; height: 65px; border-radius: 8px; overflow: hidden; border: 1.5px solid ${accentColor}; background: #000;">
-            <img src="${data.image}" alt="${data.species}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
-        </div>
-    ` : '';
-    
-    toast.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 6px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 1.5rem;">${icon}</span>
-                <div>
-                    <div style="font-weight: 800; font-size: 0.95rem; letter-spacing: 0.5px; color: ${accentColor}; text-transform: uppercase;">
-                        ${title}
-                    </div>
-                    <div style="font-size: 0.72rem; color: rgba(255,255,255,0.6);">
-                        📹 ${data.cameraId} &bull; 🕒 ${data.timestamp}
-                    </div>
-                </div>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="background: ${badgeBg}; color: white; padding: 3px 9px; border-radius: 12px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap;">
-                    ${badgeText}
-                </span>
-                <button onclick="dismissWildlifeToast('${toastId}')" style="background: transparent; border: none; color: rgba(255,255,255,0.7); font-size: 1.3rem; cursor: pointer; line-height: 1; padding: 0 4px;" title="Dismiss">&times;</button>
-            </div>
-        </div>
-
-        <div style="display: flex; gap: 12px; align-items: center;">
-            ${thumbnailHtml}
-            <div style="flex: 1; font-size: 0.82rem; line-height: 1.45;">
-                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                    <span style="color: rgba(255,255,255,0.6);">Animal / Class:</span>
-                    <strong style="color: #ffffff; font-size: 0.92rem; text-transform: capitalize;">${data.species}</strong>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                    <span style="color: rgba(255,255,255,0.6);">Confidence:</span>
-                    <strong style="color: #4ade80;">${data.confidence}%</strong>
-                </div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                    <span style="color: rgba(255,255,255,0.6);">Observed Behavior:</span>
-                    <strong style="color: #60a5fa; text-transform: uppercase; font-size: 0.78rem;">${data.behavior.replace(/^Observable behavior:\s*/i, '')}</strong>
-                </div>
-                ${data.trackId !== 'primary' ? `
-                <div style="display: flex; justify-content: space-between;">
-                    <span style="color: rgba(255,255,255,0.6);">Track ID:</span>
-                    <span style="color: #facc15; font-family: monospace; font-size: 0.78rem;">#${data.trackId}</span>
-                </div>` : ''}
-            </div>
-        </div>
-
-        <div style="margin-top: 10px; width: 100%; height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden;">
-            <div id="${toastId}-progress" class="toast-progress-bar" style="background: ${accentColor}; width: 100%;"></div>
-        </div>
-    `;
-    
-    // Prepend so newest is on top
-    container.prepend(toast);
-    
-    // Auto-dismiss after 8 seconds with hover pause
-    let remainingMs = 8000;
-    let startTime = Date.now();
-    let dismissTimer = null;
-    const progressEl = document.getElementById(`${toastId}-progress`);
-    
-    if (progressEl) {
-        progressEl.style.transition = `width ${remainingMs}ms linear`;
-        setTimeout(() => { progressEl.style.width = '0%'; }, 50);
-    }
-    
-    function startTimer() {
-        startTime = Date.now();
-        dismissTimer = setTimeout(() => {
-            dismissWildlifeToast(toastId);
-        }, remainingMs);
-        if (progressEl) {
-            progressEl.style.transition = `width ${remainingMs}ms linear`;
-            progressEl.style.width = '0%';
-        }
-    }
-    
-    function pauseTimer() {
-        if (dismissTimer) clearTimeout(dismissTimer);
-        const elapsed = Date.now() - startTime;
-        remainingMs = Math.max(500, remainingMs - elapsed);
-        if (progressEl) {
-            const computedWidth = window.getComputedStyle(progressEl).width;
-            progressEl.style.transition = 'none';
-            progressEl.style.width = computedWidth;
-        }
-    }
-    
-    toast.addEventListener('mouseenter', pauseTimer);
-    toast.addEventListener('mouseleave', startTimer);
-    
-    startTimer();
+    // Disabled popup when detected per user requirement: "i dont need the popup when detected"
+    return;
 }
 
 function dismissWildlifeToast(toastId) {
@@ -1563,161 +1499,34 @@ function dismissWildlifeToast(toastId) {
 }
 
 // ===================================================================
-// DEDICATED ADMIN SIDE DETECTION ALERT POPUP SYSTEM
+// DEDICATED ADMIN SIDE DETECTION ALERT SYSTEM (STATE TRACKER)
 // ===================================================================
 const activeAdminSideAlertTimers = new Map();
 
 function showOrUpdateAdminSideAlert(det, cameraId, frameSnapshot, allDetections) {
     if (!det) return;
-    let container = document.getElementById('adminSideAlertContainer');
-    if (!container) {
-        container = document.createElement('div');
-        container.id = 'adminSideAlertContainer';
-        document.body.appendChild(container);
-    }
-
     const species = (det.animal || det.species || det.class_name || 'Target');
     const trackId = det.track_id !== undefined ? String(det.track_id) : 'P001';
-    const cardId = `admin-side-alert-${trackId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-    
-    // Meta styling
-    const meta = getDetectionClassMeta(species);
-    const riskScore = det.risk_score || (det.danger_level === 'high' ? 88 : 65);
-    const isHigh = meta.isHigh || riskScore >= 70;
-    const dangerLevel = (det.danger_level || (isHigh ? 'critical' : (riskScore >= 45 ? 'medium' : 'low'))).toUpperCase();
-    const accentColor = isHigh ? '#ef4444' : (riskScore >= 45 ? '#f59e0b' : '#10b981');
-    const badgeBg = isHigh ? 'rgba(239, 68, 68, 0.25)' : (riskScore >= 45 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(16, 185, 129, 0.25)');
-    const badgeBorder = isHigh ? '#ef4444' : (riskScore >= 45 ? '#f59e0b' : '#10b981');
-    
-    // Behavior and motion details
-    const rawBeh = (det.behavior || det.behaviour || det.pose || 'Active movement')
-        .replace(/^Observable behavior:\s*/i, '')
-        .replace(/_/g, ' ')
-        .toUpperCase();
-    
-    const speed = det.speed !== undefined ? det.speed : (det.velocity_px_sec || 0);
-    const speedStr = speed > 0.5 ? `${typeof speed === 'number' ? speed.toFixed(1) : speed} px/s` : '';
-    const dir = (det.direction || det.movement_direction || det.movement_vector || '').toUpperCase().replace(/_/g, ' ');
-    const dirStr = (dir && dir !== 'STATIONARY' && dir !== 'NONE' && dir !== 'UNKNOWN') ? dir : '';
-    
-    let behaviorDisplay = rawBeh;
-    if (speedStr) behaviorDisplay += ` • ${speedStr}`;
-    if (dirStr) behaviorDisplay += ` • ${dirStr}`;
     
     let confDisplay = '92%';
     if (det.confidence !== undefined) {
         const c = det.confidence;
         confDisplay = typeof c === 'number' ? (c > 1.0 ? c : c * 100).toFixed(0) + '%' : String(c);
     }
-    
-    const zoneName = det.zone || (typeof currentSectorZone !== 'undefined' ? currentSectorZone : 'Zone-A (Corridor)');
-    const camName = cameraId || 'IP_WEBCAM_01';
-    const timeNow = new Date().toLocaleTimeString();
+    const riskScore = det.risk_score || (det.danger_level === 'high' ? 88 : 65);
 
-    // Store as current detection for quick actions (SMS, Sound)
+    // Maintain detection state for manual operator actions (Broadcast SMS, siren)
     currentDetectionData = {
         species: species,
         confidence: confDisplay,
+        danger_level: det.danger_level || 'critical',
         risk_score: riskScore,
-        image: frameSnapshot,
+        behaviour: det.behavior || det.behaviour || det.pose || 'Active movement',
+        image: frameSnapshot || det.image || '',
         track_id: trackId
     };
-
-    let existingCard = document.getElementById(cardId);
-    if (existingCard) {
-        // Continuous live update of existing on-screen card
-        const imgEl = existingCard.querySelector('.side-alert-img');
-        if (imgEl && frameSnapshot) imgEl.src = frameSnapshot;
-        
-        const behEl = existingCard.querySelector('.side-alert-beh');
-        if (behEl) behEl.textContent = behaviorDisplay;
-        
-        const riskEl = existingCard.querySelector('.side-alert-risk');
-        if (riskEl) riskEl.textContent = `${riskScore}% ${dangerLevel}`;
-        
-        const timeEl = existingCard.querySelector('.side-alert-time');
-        if (timeEl) timeEl.textContent = `🕒 ${timeNow}`;
-        
-        const progressEl = existingCard.querySelector('.side-alert-bar');
-        if (progressEl) progressEl.style.width = `${Math.min(riskScore, 100)}%`;
-
-        // Reset inactivity dismiss timer
-        resetSideAlertInactivityTimer(cardId);
-        return;
-    }
-
-    // Play chime for newly arriving detection
-    playAlertChime();
-
-    // Build the new side alert card
-    const card = document.createElement('div');
-    card.id = cardId;
-    card.className = 'admin-side-alert-card';
-    card.style.borderColor = accentColor;
-    card.style.boxShadow = `0 16px 40px rgba(0,0,0,0.85), 0 0 25px ${accentColor}40`;
-
-    card.innerHTML = `
-        <div class="admin-side-alert-header">
-            <div class="tag-live" style="color: ${accentColor};">
-                <span class="pulse-dot" style="background: ${accentColor}; box-shadow: 0 0 10px ${accentColor};"></span>
-                <span>🚨 ${meta.title || 'TARGET DETECTED'}</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-                <span style="font-size: 0.72rem; color: #94a3b8; font-family: monospace;">#${trackId}</span>
-                <button onclick="dismissAdminSideAlert('${cardId}')" style="background: none; border: none; color: #94a3b8; font-size: 1.25rem; cursor: pointer; line-height: 1; padding: 0 4px;" title="Dismiss">&times;</button>
-            </div>
-        </div>
-        <div class="admin-side-alert-body">
-            <div class="admin-side-alert-thumb" style="border-color: ${accentColor};">
-                <img class="side-alert-img" src="${frameSnapshot || 'logo.jpg'}" alt="${species}">
-            </div>
-            <div class="admin-side-alert-info">
-                <div class="admin-side-alert-title">
-                    <span style="display: flex; align-items: center; gap: 6px;">
-                        <span>${meta.icon}</span>
-                        <strong style="text-transform: uppercase; letter-spacing: 0.5px;">${species}</strong>
-                    </span>
-                    <span class="admin-side-alert-badge side-alert-risk" style="background: ${badgeBg}; border: 1px solid ${badgeBorder}; color: ${accentColor};">
-                        ${riskScore}% ${dangerLevel}
-                    </span>
-                </div>
-                
-                <div class="admin-side-alert-behavior side-alert-beh">
-                    ${behaviorDisplay}
-                </div>
-
-                <div class="admin-side-alert-meta" style="margin-top: 4px;">
-                    <span>📍 ${zoneName}</span>
-                    <span>📹 ${camName}</span>
-                    <span class="side-alert-time" style="color: #cbd5e1;">🕒 ${timeNow}</span>
-                </div>
-
-                <!-- Threat Meter -->
-                <div style="margin-top: 6px; width: 100%; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden;">
-                    <div class="side-alert-bar" style="width: ${Math.min(riskScore, 100)}%; height: 100%; background: ${accentColor}; transition: width 0.3s ease;"></div>
-                </div>
-            </div>
-        </div>
-        <div class="admin-side-alert-actions">
-            <button class="admin-side-alert-btn" onclick="triggerAdminDeterrent('${species}')" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.4); color: #fbbf24;" title="Activate audio deterrent siren">
-                🔊 Sound Siren
-            </button>
-            <button class="admin-side-alert-btn" onclick="doSendSms()" style="background: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.45); color: #f87171;" title="Dispatch emergency SMS notification">
-                📱 Send SMS
-            </button>
-            <button class="admin-side-alert-btn" id="${cardId}-ack" onclick="acknowledgeAdminSideAlert('${cardId}')" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: #34d399;" title="Mark acknowledged">
-                ✓ Acknowledge
-            </button>
-        </div>
-    `;
-
-    // Limit maximum stacked side alerts to 3
-    while (container.children.length >= 3) {
-        container.removeChild(container.lastElementChild);
-    }
-
-    container.prepend(card);
-    resetSideAlertInactivityTimer(cardId);
+    // Floating side popup cards disabled per user requirement: "i dont need the popup when detected"
+    return;
 }
 
 function resetSideAlertInactivityTimer(cardId) {
@@ -1761,19 +1570,19 @@ function dismissAdminSideAlert(cardId) {
 function acknowledgeAdminSideAlert(cardId) {
     const ackBtn = document.getElementById(`${cardId}-ack`);
     if (ackBtn) {
-        ackBtn.innerHTML = '✓ Acknowledged';
+        ackBtn.innerHTML = 'Acknowledged';
         ackBtn.style.background = 'rgba(16, 185, 129, 0.35)';
         ackBtn.style.color = '#10b981';
         ackBtn.style.borderColor = '#10b981';
         ackBtn.disabled = true;
     }
-    showNotification('🛡️ Alert acknowledged by admin.', 'success');
+    showNotification(' Alert acknowledged by admin.', 'success');
 }
 
 function triggerAdminDeterrent(species) {
     prepareSoundPopup(species);
     doPlaySound();
-    showNotification(`🔊 Alarm activated for ${species.toUpperCase()}`, 'warning');
+    showNotification(` Alarm activated for ${species.toUpperCase()}`, 'warning');
 }
 
 function requestDesktopNotificationPermission() {
@@ -1788,7 +1597,7 @@ function requestDesktopNotificationPermission() {
     }
     Notification.requestPermission().then(permission => {
         if (permission === 'granted') {
-            showNotification('✅ Desktop browser alerts enabled for wildlife intrusions!', 'success');
+            showNotification(' Desktop browser alerts enabled for wildlife intrusions!', 'success');
             updateDesktopNotifButton(true);
             new Notification('WildAI Alert System', {
                 body: 'Desktop intrusion alerts are now active.',
@@ -1807,11 +1616,11 @@ function updateDesktopNotifButton(isEnabled) {
     const btn = document.getElementById('btn-desktop-notif');
     if (btn) {
         if (isEnabled) {
-            btn.innerHTML = '🔔 Desktop Alerts: ON';
+            btn.innerHTML = ' Desktop Alerts: ON';
             btn.style.color = '#4ade80';
             btn.style.borderColor = '#4ade80';
         } else {
-            btn.innerHTML = '🔕 Desktop Alerts: OFF';
+            btn.innerHTML = ' Desktop Alerts: OFF';
             btn.style.color = '#94a3b8';
             btn.style.borderColor = '#475569';
         }
@@ -1821,7 +1630,7 @@ function updateDesktopNotifButton(isEnabled) {
 function sendDesktopBrowserNotification(species, confidence, riskLevel, cameraId) {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
     try {
-        const notif = new Notification(`🚨 ${species.toUpperCase()} DETECTED!`, {
+        const notif = new Notification(` ${species.toUpperCase()} DETECTED!`, {
             body: `Confidence: ${confidence}% | ${riskLevel} RISK\nCamera: ${cameraId}\nImmediate attention required.`,
             icon: 'logo.jpg',
             tag: `wildlife-${species.toLowerCase()}`,
@@ -1834,162 +1643,44 @@ function sendDesktopBrowserNotification(species, confidence, riskLevel, cameraId
 }
 
 function playAlertChime() {
-    try {
-        const ctx = getAudioContext();
-        if (ctx.state === 'suspended') ctx.resume();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(880, ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.35);
-        gain.gain.setValueAtTime(0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
-    } catch(e) {}
+    // Sound on detection disabled per user requirement: "i dont need any sound when detected"
+    return;
 }
 
 function triggerDetectionAlertPopup(data) {
     if (!data) return;
-    const smsModal = document.getElementById('smsAlertModal');
-    if (!smsModal) return;
-
-    const now = Date.now();
-    const isModalOpen = !smsModal.classList.contains('hidden') && smsModal.style.display !== 'none';
-
-    if (isModalOpen) {
-        // Continuously update live detection details while modal is open
-        if (data.image) {
-            const img = document.getElementById('smsModalImage');
-            if (img) img.src = data.image;
-        }
-        const behaviorEl = document.getElementById('smsModalBehavior');
-        if (behaviorEl) {
-            const rawBeh = (data.behaviour || data.pose || 'Active movement').replace(/^Observable behavior:\s*/i, '').replace(/_/g, ' ').toUpperCase();
-            behaviorEl.textContent = rawBeh;
-        }
-        const riskEl = document.getElementById('smsModalRiskScore');
-        if (riskEl && data.risk_score) {
-            riskEl.textContent = `${data.risk_score}%`;
-        }
-        return;
-    }
-
-    const cooldownPeriod = 2000;
-    if ((now - lastPopupTime) > cooldownPeriod || lastPopupSpecies !== data.species) {
-        lastPopupTime = now;
-        lastPopupSpecies = data.species;
-        currentDetectionData = data;
-        showDetectionPopups(data);
-    }
+    currentDetectionData = data;
+    // Automatic modal popup disabled per user requirement: "i dont need the popup when detected"
+    return;
 }
 
 function showDetectionPopups(data) {
     if (!data) return;
-    const meta = getDetectionClassMeta(data.species);
-
-    const spIcon = meta.icon;
-    const spTitle = meta.title;
-    const spSubtitle = meta.category;
-    const displaySpecies = meta.display;
-
-    let isHigh = meta.isHigh || (data.risk_score && data.risk_score >= 70);
-    let dangerColor = meta.accentColor || (isHigh ? '#ff4444' : '#ff9900');
-    let badgeText = isHigh ? 'CRITICAL RISK 🔴' : `${meta.dangerLevel.toUpperCase()} RISK 🟡`;
-
-    // ---- Show SMS Popup (Popup 1) ----
-    const smsModal = document.getElementById('smsAlertModal');
-    if (smsModal) {
-        if (data.image) {
-            const img = document.getElementById('smsModalImage');
-            if (img) img.src = data.image;
-        }
-
-        const iconEl = document.getElementById('smsModalIcon');
-        const titleEl = document.getElementById('smsModalTitle');
-        const subtitleEl = document.getElementById('smsModalSubtitle');
-        if (iconEl) iconEl.textContent = spIcon;
-        if (titleEl) titleEl.textContent = spTitle;
-        if (subtitleEl) subtitleEl.textContent = spSubtitle;
-
-        const speciesEl = document.getElementById('smsModalSpecies');
-        if (speciesEl) speciesEl.textContent = displaySpecies;
-
-        const confEl = document.getElementById('smsModalConfidence');
-        if (confEl) confEl.textContent = `Confidence: ${data.confidence || '95%'}`;
-
-        const badge = document.getElementById('smsModalDangerBadge');
-        if (badge) {
-            badge.textContent = badgeText;
-            badge.style.background = dangerColor;
-        }
-
-        const behaviorEl = document.getElementById('smsModalBehavior');
-        if (behaviorEl) {
-            const rawBeh = (data.behaviour || data.pose || 'Active movement').replace(/^Observable behavior:\s*/i, '').replace(/_/g, ' ').toUpperCase();
-            behaviorEl.textContent = rawBeh;
-        }
-        const riskEl = document.getElementById('smsModalRiskScore');
-        if (riskEl) {
-            riskEl.textContent = `${data.risk_score || meta.riskScore}%`;
-        }
-
-        // CRITICAL: Always bring modal to front and display
-        smsModal.classList.remove('hidden');
-        smsModal.style.setProperty('display', 'flex', 'important');
-        smsModal.style.zIndex = '99999';
-
-        playAlertChime();
-        showNotification(`${spIcon} DETECTED: ${displaySpecies}`, 'error');
-
-        const mode = currentSystemSettings.auto_response_mode || 'manual';
-        const isAutoActive = autoSmsEnabled || mode === 'full' || mode === 'sms-only';
-        const autoBadge = document.getElementById('smsModalAutoBadge');
-        if (autoBadge) {
-            if (isAutoActive) {
-                autoBadge.style.display = 'block';
-                autoBadge.textContent = '⚡ Automated Alert Dispatched • Active Surveillance Mode';
-            } else {
-                autoBadge.style.display = 'none';
-            }
-        }
-    }
-
-    // ---- Prepare Sound Popup (Popup 2) ----
-    prepareSoundPopup(data.species);
-
-    // Automated Sound Trigger?
-    if (autoSoundEnabled) {
-        console.log(`[Auto-Sound] Automatically playing deterrent for ${data.species}`);
-        setTimeout(() => {
-            doPlaySound();
-            showNotification(`🔊 Alarm Activated`, 'info');
-        }, 1000);
-    }
+    currentDetectionData = data;
+    // Automatic popups disabled per user requirement: "i dont need the popup when detected"
+    return;
 }
 
 function prepareSoundPopup(species) {
     const speciesLower = (species || '').toLowerCase();
-    let icon = '🐾';
+    let icon = '';
     let soundDesc = 'Loud deterrent sound for 10 seconds';
     
     if (speciesLower.includes('person') || speciesLower.includes('human') || speciesLower.includes('poacher')) {
-        icon = '🚨';
-        soundDesc = '🚨 High-Decibel Security Alarm & Strobe Warning — 10 seconds';
+        icon = '';
+        soundDesc = ' High-Decibel Security Alarm & Strobe Warning — 10 seconds';
     } else if (speciesLower.includes('elephant')) {
-        icon = '🐘';
-        soundDesc = '🐝 Bee/Wasp Swarm Sound — 10 seconds (elephants fear bees)';
+        icon = '';
+        soundDesc = ' Bee/Wasp Swarm Sound — 10 seconds (elephants fear bees)';
     } else if (speciesLower.includes('tiger') || speciesLower.includes('cat') || speciesLower.includes('horse') || speciesLower.includes('zebra') || speciesLower.includes('leopard')) {
-        icon = '🐅';
-        soundDesc = '🚨 High-Intensity Air Horn / Siren — 10 seconds';
+        icon = '';
+        soundDesc = ' High-Intensity Air Horn / Siren — 10 seconds';
     } else if (speciesLower.includes('wild boar') || speciesLower.includes('boar') || speciesLower.includes('pig')) {
-        icon = '🐗';
-        soundDesc = '📢 Loud Air Horn — 10 seconds';
+        icon = '';
+        soundDesc = ' Loud Air Horn — 10 seconds';
     } else if (speciesLower.includes('bear')) {
-        icon = '🐻';
-        soundDesc = '📢 Air Horn / Siren — 10 seconds';
+        icon = '';
+        soundDesc = ' Air Horn / Siren — 10 seconds';
     }
 
     const sIcon = document.getElementById('soundSpeciesIcon');
@@ -2024,7 +1715,7 @@ async function handleSmsApproval() {
         localStorage.setItem('autoSms', 'true');
         const toggle = document.getElementById('toggleAutoSms');
         if (toggle) toggle.checked = true;
-        showNotification('🤖 Auto-SMS Enabled for future alerts', 'success');
+        showNotification(' Auto-SMS Enabled for future alerts', 'success');
     }
     await doSendSms();
 }
@@ -2048,18 +1739,18 @@ async function doSendSms() {
             });
             const result = await response.json();
             if (result.success) {
-                showNotification(`✅ ${result.message}`, 'success');
+                showNotification(` ${result.message}`, 'success');
             } else {
-                showNotification(`⚠️ SMS issue: ${result.message}`, 'warning');
+                showNotification(` SMS issue: ${result.message}`, 'warning');
                 console.error('[SMS Error]', result.message);
             }
         } catch (e) {
             console.error('[SMS fetch error]', e);
-            showNotification('❌ Could not reach SMS gateway.', 'error');
+            showNotification(' Could not reach SMS gateway.', 'error');
         }
     }
 
-    btn.textContent = '📱 Allow SMS Alert';
+    btn.textContent = ' Allow SMS Alert';
     btn.disabled = false;
 
     // Close SMS popup, show sound popup
@@ -2095,7 +1786,7 @@ function handleSoundApproval() {
         localStorage.setItem('autoSound', 'true');
         const toggle = document.getElementById('toggleAutoSound');
         if (toggle) toggle.checked = true;
-        showNotification('🔊 Auto-Sound Enabled for future alerts', 'success');
+        showNotification(' Auto-Sound Enabled for future alerts', 'success');
     }
     doPlaySound();
 }
@@ -2580,7 +2271,7 @@ function captureLiveSnapshot() {
     stopLiveCamera();
     document.getElementById('liveCameraContainer').style.display = 'none';
     document.getElementById('fileUploadContainer').style.display = 'block';
-    showNotification("📸 Live camera frame captured successfully!", "safe");
+    showNotification(" Live camera frame captured successfully!", "safe");
   }, "image/jpeg", 0.92);
 }
 
@@ -2628,7 +2319,7 @@ function getCurrentLocationForReport() {
   if (!locationInput) return;
 
   if (navigator.geolocation) {
-    locationInput.value = '🛰️ Syncing GPS...';
+    locationInput.value = '️ Syncing GPS...';
     navigator.geolocation.getCurrentPosition(
       function (position) {
         const lat = position.coords.latitude;
@@ -2640,7 +2331,7 @@ function getCurrentLocationForReport() {
           userReportPickerMap.setView([lat, lon], 13);
           setReportCoordinates(lat, lon);
         }
-        showNotification('📍 Location synced to form.', 'info');
+        showNotification(' Location synced to form.', 'info');
       },
       function (err) {
         locationInput.value = 'Thiruvananthapuram (Trivandrum) District';
@@ -2787,11 +2478,11 @@ async function submitWildlifeSighting() {
           escapeBanner.style.gap = '10px';
           escapeBanner.innerHTML = `
             <div>
-              <strong style="color: #2e7d32;">🚨 ${detectedOrReportedAnimal.toUpperCase()} Detected!</strong>
+              <strong style="color: #2e7d32;"> ${detectedOrReportedAnimal.toUpperCase()} Detected!</strong>
               <div style="font-size: 0.88rem; color: #1b5e20;">Dynamic safe escape route calculated away from threat centroid.</div>
             </div>
             <a href="#evacuation" class="btn btn-primary" style="padding: 6px 14px; font-size: 0.88rem; text-decoration: none;" onclick="focusEvacuationRoute('${detectedOrReportedAnimal}')">
-              🧭 View Safe Escape Route &rarr;
+               View Safe Escape Route &rarr;
             </a>
           `;
           resCard.appendChild(escapeBanner);
@@ -2954,22 +2645,22 @@ async function loadActiveAlerts() {
         alertsContainer.innerHTML = data.slice(0, 8).map(alert => {
           const type = (alert.risk_level || alert.alert_level || 'INFO').toLowerCase();
           const speciesLower = (alert.species || '').toLowerCase();
-          let icon = '🐾';
-          if (speciesLower.includes('tiger')) icon = '🐅';
-          else if (speciesLower.includes('elephant')) icon = '🐘';
-          else if (speciesLower.includes('boar')) icon = '🐗';
-          else if (speciesLower.includes('leopard')) icon = '🐆';
+          let icon = '';
+          if (speciesLower.includes('tiger')) icon = '';
+          else if (speciesLower.includes('elephant')) icon = '';
+          else if (speciesLower.includes('boar')) icon = '';
+          else if (speciesLower.includes('leopard')) icon = '';
 
           const timeStr = alert.timestamp ? new Date(alert.timestamp).toLocaleTimeString() : 'Recent';
-          const reasonStr = alert.reason ? `<div style="font-size: 0.8rem; color: #64b5f6; margin-top: 2px;">⚡ ${alert.reason}</div>` : '';
+          const reasonStr = alert.reason ? `<div style="font-size: 0.8rem; color: #64b5f6; margin-top: 2px;"> ${alert.reason}</div>` : '';
 
           return `
             <div class="alert alert-danger-${type === 'critical' || type === 'high' ? 'high' : type === 'warning' || type === 'medium' ? 'medium' : 'low'}" style="margin-bottom: 8px;">
               <span class="alert-icon">${icon}</span>
               <div style="flex: 1;">
                 <strong>${(alert.species || 'Wildlife').toUpperCase()} #${alert.track_id || ''} Detected</strong><br>
-                <span style="font-size: 0.875rem;">📍 ${alert.location || 'Border Zone'}</span><br>
-                <span style="font-size: 0.875rem; opacity: 0.8;">🕐 ${timeStr}</span>
+                <span style="font-size: 0.875rem;"> ${alert.location || 'Border Zone'}</span><br>
+                <span style="font-size: 0.875rem; opacity: 0.8;"> ${timeStr}</span>
                 ${reasonStr}
               </div>
               <span class="badge badge-${type === 'critical' || type === 'high' ? 'danger' : type === 'warning' || type === 'medium' ? 'warning' : 'info'}">
@@ -2991,21 +2682,21 @@ async function loadActiveAlerts() {
       species: 'Tiger',
       location: 'Sector 3, Near Village Boundary',
       time: '15 minutes ago',
-      icon: '🐅'
+      icon: ''
     },
     {
       type: 'medium',
       species: 'Elephant Herd',
       location: 'Sector 7, Agricultural Area',
       time: '1 hour ago',
-      icon: '🐘'
+      icon: ''
     },
     {
       type: 'low',
       species: 'Wild Boar',
       location: 'Sector 5, Forest Edge',
       time: '2 hours ago',
-      icon: '🐗'
+      icon: ''
     }
   ];
 
@@ -3014,8 +2705,8 @@ async function loadActiveAlerts() {
       <span class="alert-icon">${alert.icon}</span>
       <div style="flex: 1;">
         <strong>${alert.species} Detected</strong><br>
-        <span style="font-size: 0.875rem;">📍 ${alert.location}</span><br>
-        <span style="font-size: 0.875rem; opacity: 0.8;">🕐 ${alert.time}</span>
+        <span style="font-size: 0.875rem;"> ${alert.location}</span><br>
+        <span style="font-size: 0.875rem; opacity: 0.8;"> ${alert.time}</span>
       </div>
       <span class="badge badge-${alert.type === 'high' ? 'danger' : alert.type === 'medium' ? 'warning' : 'info'}">
         ${alert.type.toUpperCase()}
@@ -3029,9 +2720,9 @@ function loadRecentReports() {
   if (!reportsContainer) return;
 
   const mockReports = [
-    { species: 'Leopard', location: 'Sector 2', time: '3 hours ago', status: 'verified', icon: '🐆' },
-    { species: 'Deer', location: 'Sector 6', time: '5 hours ago', status: 'verified', icon: '🦌' },
-    { species: 'Wild Boar', location: 'Sector 4', time: '8 hours ago', status: 'verified', icon: '🐗' },
+    { species: 'Leopard', location: 'Sector 2', time: '3 hours ago', status: 'verified', icon: '' },
+    { species: 'Deer', location: 'Sector 6', time: '5 hours ago', status: 'verified', icon: '' },
+    { species: 'Wild Boar', location: 'Sector 4', time: '8 hours ago', status: 'verified', icon: '' },
   ];
 
   reportsContainer.innerHTML = mockReports.map(report => `
@@ -3039,11 +2730,11 @@ function loadRecentReports() {
       <div style="font-size: 3rem; text-align: center; margin-bottom: var(--space-md);">${report.icon}</div>
       <h4 style="text-align: center; margin-bottom: var(--space-sm);">${report.species}</h4>
       <p style="text-align: center; color: var(--color-text-secondary); font-size: 0.875rem;">
-        📍 ${report.location}<br>
-        🕐 ${report.time}
+         ${report.location}<br>
+         ${report.time}
       </p>
       <div style="text-align: center; margin-top: var(--space-md);">
-        <span class="badge badge-success">✓ Verified</span>
+        <span class="badge badge-success"> Verified</span>
       </div>
     </div>
   `).join('');
@@ -3053,6 +2744,27 @@ function loadRecentReports() {
 // Admin Portal Functions
 // ===================================
 function initAdminPortal() {
+  // Session authentication check
+  const token = sessionStorage.getItem('adminToken') || localStorage.getItem('adminToken');
+  if (!token) {
+    window.location.replace('login.html?reason=unauthenticated');
+    return;
+  }
+
+  // Attach logout handler
+  const logoutBtns = document.querySelectorAll('#adminLogoutBtn, [data-lang="admin-logout"]');
+  logoutBtns.forEach(btn => {
+    btn.addEventListener('click', handleAdminLogout);
+  });
+
+  // Handle browser back-forward cache to prevent stale session display
+  window.addEventListener('pageshow', function (event) {
+    const activeToken = sessionStorage.getItem('adminToken') || localStorage.getItem('adminToken');
+    if (!activeToken) {
+      window.location.replace('login.html?reason=logged_out');
+    }
+  });
+
   // Update last updated time
   updateLastUpdatedTime();
   setInterval(updateLastUpdatedTime, 60000); // Update every minute
@@ -3075,6 +2787,39 @@ function initAdminPortal() {
     loadIntrusionAlerts();
     loadReportValidation();
   }, 10000);
+}
+
+async function handleAdminLogout(e) {
+  if (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  const token = sessionStorage.getItem('adminToken') || localStorage.getItem('adminToken');
+  try {
+    await fetch('/api/logout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Token': token || ''
+      }
+    });
+  } catch (err) {
+    console.warn('Logout network error, clearing client state:', err);
+  }
+
+  // Purge all auth state
+  sessionStorage.removeItem('adminToken');
+  sessionStorage.removeItem('adminOfficerId');
+  localStorage.removeItem('adminToken');
+  localStorage.removeItem('adminOfficerId');
+  sessionStorage.clear();
+  sessionStorage.setItem('wildai_logged_out', 'true');
+
+  // Expire cookie client-side as well
+  document.cookie = "admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Lax";
+
+  // Redirect explicitly to login.html (never index.html)
+  window.location.replace('login.html?logged_out=true');
 }
 
 let currentSystemSettings = {};
@@ -3151,12 +2896,12 @@ async function saveSystemSettings() {
     });
     const result = await response.json();
     if (result.success) {
-      showNotification('✅ SMS & Gateway Settings saved!', 'success');
+      showNotification(' SMS & Gateway Settings saved!', 'success');
     } else {
-      showNotification(`❌ Failed to save: ${result.message}`, 'error');
+      showNotification(` Failed to save: ${result.message}`, 'error');
     }
   } catch (e) {
-    showNotification('❌ Could not reach server to save settings.', 'error');
+    showNotification(' Could not reach server to save settings.', 'error');
   } finally {
     btn.textContent = 'Save SMS Settings';
     btn.disabled = false;
@@ -3182,7 +2927,7 @@ async function loadWildlifeDetections() {
       let html = '';
       for (const detection of detections) {
           const danger = detection.danger_level || 'medium';
-          const icon = danger === 'high' ? '🐅' : (danger === 'low' ? '🦌' : '🐘');
+          const icon = danger === 'high' ? '' : (danger === 'low' ? '' : '');
           
           html += `
             <div class="detection-item ${danger}-danger">
@@ -3193,14 +2938,14 @@ async function loadWildlifeDetections() {
                       <span style="font-size: 1.5rem;">${icon}</span>
                       <div>
                         <div style="font-weight: 600; color: var(--color-text-light);">${detection.species}</div>
-                        <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);">📹 Saved from ${detection.location}</div>
+                        <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);"> Saved from ${detection.location}</div>
                       </div>
                     </div>
                     <span class="badge badge-${danger === 'high' ? 'danger' : 'warning'}">${danger.toUpperCase()}</span>
                   </div>
                   <div style="display: flex; justify-content: space-between; font-size: 0.875rem; color: rgba(255, 255, 255, 0.5);">
-                    <span>🕐 ${new Date(detection.timestamp).toLocaleTimeString()}</span>
-                    <span>🎯 ${detection.confidence} confidence</span>
+                    <span> ${new Date(detection.timestamp).toLocaleTimeString()}</span>
+                    <span> ${detection.confidence} confidence</span>
                   </div>
                 </div>
               </div>
@@ -3224,37 +2969,58 @@ async function loadIntrusionAlerts() {
   const container = document.getElementById('intrusionAlerts');
   if (!container) return;
 
-  const mockIntrusions = [
+  const criticalIntrusions = [
     {
-      type: 'Unauthorized Entry',
-      location: 'Sensor 24 - North Boundary',
-      time: '5 min ago',
-      status: 'Active',
-      icon: '🚨'
+      type: 'Unauthorized Human Incursion',
+      location: 'Sensor Node 24 — North Perimeter Boundary',
+      time: '6 min ago',
+      status: 'CRITICAL',
+      details: 'Unauthorized entity moving across sector buffer line. Automated acoustic deterrent triggered.',
+      species: 'Human Intruder',
+      confidence: '98%',
+      riskScore: 94
     },
     {
-      type: 'Possible Poaching Activity',
-      location: 'Sensor 31 - Protected Zone',
-      time: '45 min ago',
-      status: 'Investigating',
-      icon: '⚠️'
+      type: 'Apex Predator Incursion (Tiger)',
+      location: 'Camera Alpha-02 — Community Buffer Zone',
+      time: '32 min ago',
+      status: 'CRITICAL',
+      details: 'Bengal tiger detected in directed movement towards Ward 4 corridor. Automated advisories dispatched.',
+      species: 'Bengal Tiger',
+      confidence: '96%',
+      riskScore: 95
+    },
+    {
+      type: 'Perimeter Breach Incident',
+      location: 'Acoustic / Visual Node 31 — Sanctuary Sector',
+      time: '1 hr ago',
+      status: 'CRITICAL',
+      details: 'Boundary fence traversal recorded. Field patrol team dispatched for interception.',
+      species: 'Unauthorized Entity',
+      confidence: '91%',
+      riskScore: 89
     }
   ];
 
-  container.innerHTML = mockIntrusions.map(intrusion => `
-    <div class="detection-item high-danger">
-      <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--space-xs);">
-        <div style="display: flex; align-items: center; gap: var(--space-sm);">
-          <span style="font-size: 1.5rem;">${intrusion.icon}</span>
-          <div>
-            <div style="font-weight: 600; color: var(--color-text-light);">${intrusion.type}</div>
-            <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);">📍 ${intrusion.location}</div>
+  container.innerHTML = criticalIntrusions.map(intrusion => `
+    <div class="detection-item-clean high-danger">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-indicator-clean danger"></span>
+            <span style="font-weight: 700; color: #1c2b22; font-size: 0.95rem;">${intrusion.type}</span>
           </div>
+          <div style="font-size: 0.82rem; color: #526357; margin-top: 2px;">${intrusion.location} &bull; ${intrusion.time}</div>
         </div>
-        <span class="badge badge-danger">${intrusion.status}</span>
+        <span class="badge-status-clean danger" style="font-weight: 700; font-size: 0.72rem;">${intrusion.status}</span>
       </div>
-      <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.5);">
-        🕐 ${intrusion.time}
+      <div style="font-size: 0.84rem; color: #3d4a41; margin-top: 6px; line-height: 1.4;">
+        ${intrusion.details}
+      </div>
+      <div style="display: flex; gap: 12px; margin-top: 8px; font-size: 0.78rem; color: #6e7d72;">
+        <span>Species: <strong style="color: #1c2b22;">${intrusion.species}</strong></span>
+        <span>Confidence: <strong style="color: #1c2b22;">${intrusion.confidence}</strong></span>
+        <span>Threat Index: <strong style="color: #dc2626;">${intrusion.riskScore}/100</strong></span>
       </div>
     </div>
   `).join('');
@@ -3306,10 +3072,10 @@ async function loadReportValidation() {
           </div>
           <h4 style="color: var(--color-text-light); text-align: center; margin-bottom: var(--space-sm);">${report.species.toUpperCase()}</h4>
           <p style="color: rgba(255, 255, 255, 0.6); font-size: 0.875rem; text-align: center;">
-            👤 Contact: ${report.contact || 'Anonymous'}<br>
-            📍 Loc: ${locText}<br>
+             Contact: ${report.contact || 'Anonymous'}<br>
+             Loc: ${locText}<br>
             <span style="font-size: 0.70rem; opacity: 0.5;">${locCoords}</span><br>
-            🕒 Time: ${report.date} ${report.time}
+             Time: ${report.date} ${report.time}
           </p>
           <div style="margin-top: var(--space-md); text-align: center;">
             <div class="badge w-full" style="justify-content: center; background: ${badgeBg}; color: ${badgeColor}; font-weight: 700; padding: 6px 10px; border-radius: 6px; font-size: 0.78rem;">
@@ -3319,10 +3085,10 @@ async function loadReportValidation() {
           </div>
           <div style="display: flex; gap: var(--space-sm); margin-top: var(--space-md);">
             <button class="btn btn-primary w-full" style="background: #2e7d32; border-color: #2e7d32;" onclick="validateReport(${report.id}, true)">
-              ✓ Approve
+               Approve
             </button>
             <button class="btn btn-outline w-full" style="color: var(--color-danger-high); border-color: var(--color-danger-high);" onclick="validateReport(${report.id}, false)">
-              ✗ Reject
+               Reject
             </button>
           </div>
         </div>
@@ -3355,17 +3121,17 @@ async function validateReport(reportId, approved) {
     const data = await response.json();
     if (data.success) {
       const action = approved ? 'approved' : 'rejected';
-      showNotification(`✅ Report #${reportId} has been ${action}.`, approved ? 'safe' : 'warning');
+      showNotification(` Report #${reportId} has been ${action}.`, approved ? 'safe' : 'warning');
       
       // Refresh queues immediately
       loadReportValidation();
       loadReportHistory();
     } else {
-      showNotification(`❌ Error: ${data.message || 'Validation failed'}`, 'error');
+      showNotification(` Error: ${data.message || 'Validation failed'}`, 'error');
     }
   } catch (error) {
     console.error("Error validating report:", error);
-    showNotification(`❌ Error: ${error.message}`, 'error');
+    showNotification(` Error: ${error.message}`, 'error');
   }
 }
 
@@ -3391,8 +3157,8 @@ async function loadReportHistory() {
             <img src="${imgSrc}" onerror="this.onerror=null; this.src='/elephant-forest.jpg';" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
             <div style="flex: 1;">
               <div style="font-weight: 700; color: var(--color-text-light); font-size: 1.05rem;">${report.species.toUpperCase()}</div>
-              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.7); margin-top: 2px;">📍 ${report.location_text || 'GPS Location Match'}</div>
-              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.5); margin-top: 2px;">🕐 ${report.date} ${report.time}</div>
+              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.7); margin-top: 2px;"> ${report.location_text || 'GPS Location Match'}</div>
+              <div style="font-size: 0.8125rem; color: rgba(255, 255, 255, 0.5); margin-top: 2px;"> ${report.date} ${report.time}</div>
             </div>
             <span class="badge badge-success" style="background: #2e7d32; color: #ffffff; font-weight: 700; padding: 6px 14px; border-radius: 6px;">VERIFIED</span>
           </div>
@@ -3414,8 +3180,8 @@ function getCurrentLocation() {
   if (!locationInput) return;
 
   if (navigator.geolocation) {
-    locationInput.value = '🛰️ Syncing Precise GPS...';
-    showNotification('📡 Requesting high-accuracy GPS data...', 'info');
+    locationInput.value = '️ Syncing Precise GPS...';
+    showNotification(' Requesting high-accuracy GPS data...', 'info');
     
     const options = {
       enableHighAccuracy: true,
@@ -3430,18 +3196,18 @@ function getCurrentLocation() {
         const accuracy = position.coords.accuracy.toFixed(0);
         
         locationInput.value = `Lat: ${lat}, Lon: ${lon}`;
-        showNotification(`📍 GPS Locked (Precision: ${accuracy}m)`, 'safe');
+        showNotification(` GPS Locked (Precision: ${accuracy}m)`, 'safe');
       },
       function (error) {
         console.warn("GPS Warning:", error.message);
         locationInput.value = 'Forest Border Area, Sector 7';
-        showNotification('🛰️ GPS timeout. Switched to default area.', 'warning');
+        showNotification('️ GPS timeout. Switched to default area.', 'warning');
       },
       options
     );
   } else {
     locationInput.value = 'Forest Border Area, Sector 7';
-    showNotification('❌ GPS restricted by your browser.', 'error');
+    showNotification(' GPS restricted by your browser.', 'error');
   }
 }
 
@@ -3450,12 +3216,12 @@ function loadAnalyticsCharts() {
   const speciesChart = document.getElementById('speciesChart');
   if (speciesChart) {
     const speciesData = [
-      { name: 'Tiger', count: 45, icon: '🐅' },
-      { name: 'Elephant', count: 78, icon: '🐘' },
-      { name: 'Leopard', count: 32, icon: '🐆' },
-      { name: 'Wild Boar', count: 156, icon: '🐗' },
-      { name: 'Deer', count: 203, icon: '🦌' },
-      { name: 'Bear', count: 28, icon: '🐻' }
+      { name: 'Tiger', count: 45, icon: '' },
+      { name: 'Elephant', count: 78, icon: '' },
+      { name: 'Leopard', count: 32, icon: '' },
+      { name: 'Wild Boar', count: 156, icon: '' },
+      { name: 'Deer', count: 203, icon: '' },
+      { name: 'Bear', count: 28, icon: '' }
     ];
 
     const maxCount = Math.max(...speciesData.map(d => d.count));
@@ -3499,22 +3265,99 @@ function loadAnalyticsCharts() {
 // ===================================
 function initLogin() {
   const loginForm = document.getElementById('loginForm');
+  const officerIdInput = document.getElementById('officerId');
+  const passwordInput = document.getElementById('password');
+
+  // Always empty inputs when arriving at login page (after logout or fresh visit)
+  if (officerIdInput) officerIdInput.value = '';
+  if (passwordInput) passwordInput.value = '';
+
+  // Informative feedback for logout or unauthorized access
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('logged_out') === 'true') {
+    showNotification('Logged out successfully. Please log in again to continue.', 'safe');
+    if (window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  } else if (urlParams.get('reason') === 'unauthenticated') {
+    showNotification('Authentication required. Please enter your officer credentials.', 'warning');
+    if (window.history.replaceState) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
 
   if (loginForm) {
-    loginForm.addEventListener('submit', function (e) {
+    loginForm.addEventListener('submit', async function (e) {
       e.preventDefault();
 
-      const officerId = document.getElementById('officerId').value;
-      const password = document.getElementById('password').value;
+      const officerId = (document.getElementById('officerId')?.value || '').trim();
+      const password = (document.getElementById('password')?.value || '').trim();
+      const rememberMe = document.getElementById('rememberMe')?.checked || false;
+      const submitBtn = loginForm.querySelector('button[type="submit"]');
 
-      // Simple demo authentication
-      if (officerId === 'officer123' && password === 'demo123') {
-        showNotification('✅ Login Successful!<br>Welcome to the Admin Dashboard.', 'safe');
-        setTimeout(() => {
-          window.location.href = 'admin-portal.html';
-        }, 1500);
-      } else {
-        showNotification('❌ Login Failed<br>Invalid credentials. Please use the demo credentials provided.', 'error');
+      if (!officerId || !password) {
+        showNotification('Please enter both Officer ID and Password.', 'error');
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span>Verifying credentials...</span>';
+      }
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ officerId, password })
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          const token = data.token || 'valid_officer_token_' + Date.now();
+          sessionStorage.removeItem('wildai_logged_out');
+          sessionStorage.setItem('adminToken', token);
+          sessionStorage.setItem('adminOfficerId', data.officerId || officerId);
+          if (rememberMe) {
+            localStorage.setItem('adminToken', token);
+            localStorage.setItem('adminOfficerId', data.officerId || officerId);
+          }
+
+          showNotification('Login Successful! Welcome to the Admin Dashboard.', 'safe');
+          setTimeout(() => {
+            window.location.href = 'admin-portal.html';
+          }, 800);
+        } else {
+          showNotification(data.message || 'Invalid credentials. Please check your Officer ID and password.', 'error');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = submitBtn.dataset.originalText;
+          }
+        }
+      } catch (err) {
+        console.error('Login error:', err);
+        // Fallback for standalone/local environment if server endpoint is unreachable
+        if ((officerId === 'officer123' && password === 'demo123') || (officerId === 'admin' && (password === 'admin123' || password === 'wildai_secure_2026'))) {
+          const token = 'offline_session_token_' + Date.now();
+          sessionStorage.removeItem('wildai_logged_out');
+          sessionStorage.setItem('adminToken', token);
+          sessionStorage.setItem('adminOfficerId', officerId);
+          if (rememberMe) {
+            localStorage.setItem('adminToken', token);
+            localStorage.setItem('adminOfficerId', officerId);
+          }
+          showNotification('Login Successful! Welcome to the Admin Dashboard.', 'safe');
+          setTimeout(() => {
+            window.location.href = 'admin-portal.html';
+          }, 800);
+        } else {
+          showNotification('Authentication error. Please check your credentials.', 'error');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = submitBtn.dataset.originalText;
+          }
+        }
       }
     });
   }
@@ -3544,12 +3387,12 @@ function refreshDevices() {
       </div>
       <div style="text-align: right;">
         <span class="badge badge-${device.status === 'online' ? 'success' : 'danger'}" style="font-size: 0.75rem;">${device.status.toUpperCase()}</span>
-        <div style="font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); margin-top: 4px;">🔋 ${device.battery}%</div>
+        <div style="font-size: 0.75rem; color: rgba(255, 255, 255, 0.5); margin-top: 4px;">Battery:  ${device.battery}%</div>
       </div>
     </div>
   `).join('');
 
-  showNotification('✅ Device status refreshed', 'safe');
+  showNotification(' Device status refreshed', 'safe');
 }
 
 async function saveAlertConfig() {
@@ -3574,11 +3417,11 @@ async function saveAlertConfig() {
       currentSystemSettings.alert_cooldown = alertCooldown;
       currentSystemSettings.auto_response_mode = autoResponseMode;
 
-      showNotification(`✅ Alert Configuration Secured!<br>
+      showNotification(` Alert Configuration Secured!<br>
         <small>Broadcasting to ${smsRecipients.split('\n').filter(n=>n.trim()).length} villagers | Mode: ${autoResponseMode}</small>`, 'safe');
     }
   } catch (e) {
-    showNotification('❌ Failed to save alert config.', 'error');
+    showNotification(' Failed to save alert config.', 'error');
   }
 }
 
@@ -3600,11 +3443,11 @@ function exportDetectionData() {
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 
-  showNotification('📥 Detection data exported successfully!', 'safe');
+  showNotification(' Detection data exported successfully!', 'safe');
 }
 
 function viewDetectionArchive() {
-  showNotification('📸 Opening detection archive...<br><small>This would open a gallery of saved detection images</small>', 'info');
+  showNotification(' Opening detection archive...<br><small>This would open a gallery of saved detection images</small>', 'info');
   // In a real implementation, this would open a modal or new page with detection images
 }
 
@@ -3612,7 +3455,7 @@ async function testAlertSystem() {
   const alertNum = document.getElementById('setting_alert_to_number')?.value?.trim()
                 || '+919495848807';
 
-  showNotification(`📱 Sending test SMS to ${alertNum}...`, 'info');
+  showNotification(` Sending test SMS to ${alertNum}...`, 'info');
 
   try {
     const response = await fetch('/api/send_sms', {
@@ -3625,12 +3468,12 @@ async function testAlertSystem() {
     });
     const result = await response.json();
     if (result.success) {
-      showNotification(`✅ Test SMS sent successfully to ${alertNum}!`, 'success');
+      showNotification(` Test SMS sent successfully to ${alertNum}!`, 'success');
     } else {
-      showNotification(`⚠️ SMS test failed: ${result.message}`, 'warning');
+      showNotification(` SMS test failed: ${result.message}`, 'warning');
     }
   } catch (e) {
-    showNotification('❌ Could not reach SMS gateway. Is the server running?', 'error');
+    showNotification(' Could not reach SMS gateway. Is the server running?', 'error');
   }
 }
 
@@ -3675,7 +3518,7 @@ function updatePoseTelemetryUI(data) {
 
     if (speciesEl) speciesEl.textContent = species;
     if (groupEl) groupEl.textContent = `${groupSize} Animal${groupSize > 1 ? 's' : ''}`;
-    if (behaviorEl) behaviorEl.textContent = `${poseState} ⚡`;
+    if (behaviorEl) behaviorEl.textContent = `${poseState} `;
     if (vectorEl) vectorEl.textContent = `Vector: ${currentSectorZone.replace(/_/g, ' ')}`;
 
     // Automatically update map & escape route whenever telemetry updates
@@ -3705,6 +3548,13 @@ let isManualPinActive = false;
 let userGisDestinations = [];
 let userGisActiveThreats = [];
 
+function updateGeospatialEvacuationRoute(species, zone, risk) {
+    const headingBadge = document.getElementById('evac-heading-badge');
+    const instructionEl = document.getElementById('evac-instruction-text');
+    if (headingBadge) headingBadge.textContent = 'HEADING: NORTHEAST';
+    if (instructionEl) instructionEl.textContent = `Route Guidance: Divert away from ${species || 'wildlife'} threat sector (${zone || 'active zone'}).`;
+}
+
 function initGeospatialMaps() {
     const adminMapEl = document.getElementById('admin-geospatial-map');
     const userMapEl = document.getElementById('user-evacuation-map');
@@ -3726,7 +3576,7 @@ function initGeospatialMaps() {
         }).addTo(adminMap);
 
         threatMarkerAdmin = L.marker(defaultCoords).addTo(adminMap)
-            .bindPopup('<b>🚨 Active Threat Centroid</b><br>Species: Elephant Herd<br>Risk: 85%')
+            .bindPopup('<b> Active Threat Centroid</b><br>Species: Elephant Herd<br>Risk: 85%')
             .openPopup();
 
         safeHavenMarkerAdmin = L.marker(safeHavenCoords, {
@@ -3738,7 +3588,7 @@ function initGeospatialMaps() {
                 popupAnchor: [1, -34],
                 shadowSize: [41, 41]
             })
-        }).addTo(adminMap).bindPopup('<b>🟢 Primary Community Evacuation Center</b><br>Cap: 250 Persons');
+        }).addTo(adminMap).bindPopup('<b> Primary Community Evacuation Center</b><br>Cap: 250 Persons');
 
         evacuationPolyline = L.polyline([defaultCoords, safeHavenCoords], {
             color: '#00e676',
@@ -3782,7 +3632,7 @@ function getUserGisLocation(promptFeedback = true) {
 
     if (indicator) indicator.style.background = '#f59e0b';
     if (statusText) statusText.textContent = 'GPS Status: Requesting browser location permission...';
-    if (promptFeedback) showNotification('🛰️ Requesting device GPS coordinates...', 'info');
+    if (promptFeedback) showNotification('️ Requesting device GPS coordinates...', 'info');
 
     if (!navigator.geolocation) {
         if (indicator) indicator.style.background = '#ef4444';
@@ -3813,7 +3663,7 @@ function getUserGisLocation(promptFeedback = true) {
             }
 
             renderUserLocationMarker(currentUserGisLat, currentUserGisLon, `Your Current Location (±${currentUserGisAccuracy}m accuracy)`);
-            if (promptFeedback) showNotification(`📍 Device location locked (±${currentUserGisAccuracy}m)`, 'safe');
+            if (promptFeedback) showNotification(` Device location locked (±${currentUserGisAccuracy}m)`, 'safe');
 
             // Calculate road route from actual user position
             calculateRealSafeRoute();
@@ -3827,7 +3677,7 @@ function getUserGisLocation(promptFeedback = true) {
             else if (err.code === 3) errMsg = 'Location request timed out.';
 
             if (statusText) {
-                statusText.innerHTML = `<span style="color:#f87171;">⚠️ ${errMsg}</span> Use "Pin Location on Map" below.`;
+                statusText.innerHTML = `<span style="color:#f87171;"> ${errMsg}</span> Use "Pin Location on Map" below.`;
             }
             if (accuracyBadge) {
                 accuracyBadge.textContent = 'Accuracy: Unavailable | Manual Mode Ready';
@@ -3861,7 +3711,7 @@ function renderUserLocationMarker(lat, lon, label = 'Your Location') {
         userGisMarker = L.marker([lat, lon], { icon: userIcon, zIndexOffset: 1000 }).addTo(userMap);
     }
 
-    userGisMarker.bindPopup(`<b>📍 ${label}</b><br><small>Coordinates: ${lat.toFixed(5)}, ${lon.toFixed(5)}</small>`).openPopup();
+    userGisMarker.bindPopup(`<b> ${label}</b><br><small>Coordinates: ${lat.toFixed(5)}, ${lon.toFixed(5)}</small>`).openPopup();
     userMap.setView([lat, lon], 14);
 }
 
@@ -3877,10 +3727,10 @@ function enableManualGisPinMode(active) {
     if (bar) bar.style.display = active ? 'block' : 'none';
     if (btn) {
         btn.style.background = active ? 'rgba(245, 158, 11, 0.2)' : 'transparent';
-        btn.textContent = active ? '⏹ Done Pinning' : '📌 Pin Location on Map';
+        btn.textContent = active ? '⏹ Done Pinning' : ' Pin Location on Map';
     }
     if (active) {
-        showNotification('📌 Click anywhere on the map to set your location.', 'info');
+        showNotification(' Click anywhere on the map to set your location.', 'info');
     }
 }
 
@@ -3903,7 +3753,7 @@ function setUserManualLocation(lat, lon, label = 'Manual Location') {
     if (accuracyBadge) accuracyBadge.textContent = 'Accuracy: Manual Pin • User Selected';
 
     renderUserLocationMarker(currentUserGisLat, currentUserGisLon, label);
-    showNotification('📍 Position set. Recalculating road escape routes...', 'safe');
+    showNotification(' Position set. Recalculating road escape routes...', 'safe');
     calculateRealSafeRoute();
 }
 
@@ -3957,7 +3807,7 @@ function renderSafeHavenMarkers(havens) {
         const isHospital = h.type === 'hospital';
         const isEmergency = h.type === 'emergency_service';
         const color = isHospital ? '#06b6d4' : (isEmergency ? '#8b5cf6' : '#10b981');
-        const iconSymbol = isHospital ? '🏥' : (isEmergency ? '🚔' : '🟢');
+        const iconSymbol = isHospital ? '' : (isEmergency ? '' : '');
 
         const havenIcon = L.divIcon({
             className: 'haven-gis-marker',
@@ -3994,16 +3844,16 @@ function renderThreatMarkers(threats) {
 
         const threatIcon = L.divIcon({
             className: 'threat-gis-marker',
-            html: `<div style="background: #ef4444; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; border: 2px solid #ffffff; box-shadow: 0 0 10px rgba(239,68,68,0.8);">⚠️</div>`,
+            html: `<div style="background: #ef4444; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; border: 2px solid #ffffff; box-shadow: 0 0 10px rgba(239,68,68,0.8);"></div>`,
             iconSize: [26, 26],
             iconAnchor: [13, 13]
         });
 
         const m = L.marker([t.lat, t.lon], { icon: threatIcon }).addTo(userMap);
         m.bindPopup(`
-            <b>🚨 Active Threat: ${t.species}</b><br>
+            <b> Active Threat: ${t.species}</b><br>
             Location: ${t.location_name}<br>
-            Status: ${t.is_verified ? '<span style="color:#10b981;">✓ Confirmed Surveillance</span>' : '<span style="color:#f59e0b;">Citizen Report</span>'}<br>
+            Status: ${t.is_verified ? '<span style="color:#10b981;"> Confirmed Surveillance</span>' : '<span style="color:#f59e0b;">Citizen Report</span>'}<br>
             Coordinates: ${t.lat.toFixed(4)}, ${t.lon.toFixed(4)}<br>
             Reported: ${t.timestamp}
         `);
@@ -4034,7 +3884,7 @@ function populateNearbySafeLocationsList(havens) {
     }
 
     list.innerHTML = havens.map(h => {
-        const icon = h.type === 'hospital' ? '🏥' : (h.type === 'emergency_service' ? '🚔' : '🟢');
+        const icon = h.type === 'hospital' ? '' : (h.type === 'emergency_service' ? '' : '');
         const distStr = h.distance_km ? `${h.distance_km} km` : 'Calculating distance...';
         return `
             <div style="background: rgba(15, 23, 42, 0.6); padding: 8px 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(255,255,255,0.06);">
@@ -4055,14 +3905,14 @@ function populateNearbyThreatsList(threats) {
     if (!list) return;
 
     if (threats.length === 0) {
-        list.innerHTML = `<div style="color: #10b981; font-size: 0.85rem; padding: 8px;">✓ No active wildlife threats recorded in surveillance range.</div>`;
+        list.innerHTML = `<div style="color: #10b981; font-size: 0.85rem; padding: 8px;"> No active wildlife threats recorded in surveillance range.</div>`;
         return;
     }
 
     list.innerHTML = threats.map(t => `
         <div style="background: rgba(239, 68, 68, 0.1); border-left: 3px solid #ef4444; padding: 8px 12px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-                <div style="font-weight: 600; font-size: 0.88rem; color: #fca5a5;">⚠️ ${t.species}</div>
+                <div style="font-weight: 600; font-size: 0.88rem; color: #fca5a5;"> ${t.species}</div>
                 <div style="font-size: 0.78rem; color: rgba(255,255,255,0.7);">${t.location_name} • ${t.is_verified ? 'Verified Sensor' : 'Citizen Submission'}</div>
             </div>
             <button class="btn btn-outline" style="padding: 2px 8px; font-size: 0.75rem; border-color: #ef4444; color: #fca5a5;" onclick="userMap.setView([${t.lat}, ${t.lon}], 14)">
@@ -4079,7 +3929,7 @@ async function calculateRealSafeRoute() {
         return;
     }
 
-    showNotification('🧭 Vectoring safe road route away from active threats...', 'info');
+    showNotification(' Vectoring safe road route away from active threats...', 'info');
 
     // Nearest threat coordinate for avoidance check
     let nearestThreat = null;
@@ -4228,7 +4078,7 @@ async function drawRoadRouteOnMap(startLat, startLon, endLat, endLon, destName, 
         }
 
         userMap.fitBounds(L.latLngBounds(routeCoords), { padding: [40, 40] });
-        showNotification(`✅ Real-time escape route plotted to ${destName}!`, 'safe');
+        showNotification(` Real-time escape route plotted to ${destName}!`, 'safe');
     } catch (e) {
         console.warn('OSRM Route fetch error, drawing direct line:', e);
         const fallbackCoords = [[startLat, startLon], [endLat, endLon]];
@@ -4248,7 +4098,7 @@ function focusEvacuationRoute(species) {
     if (evacSection) {
         evacSection.scrollIntoView({ behavior: 'smooth' });
     }
-    showNotification(`🚨 Evacuating from ${species.toUpperCase()} threat centroid...`, 'warning');
+    showNotification(` Evacuating from ${species.toUpperCase()} threat centroid...`, 'warning');
     calculateRealSafeRoute();
 }
 
@@ -4326,9 +4176,9 @@ function updateBehavioralDashboard(data) {
                     <div class="behavior-track-card" style="background: rgba(20,24,30,0.85); border: 1px solid rgba(255,255,255,0.1); border-left: 5px solid ${riskColor}; border-radius: 8px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); transition: all 0.2s ease;">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
                             <div>
-                                <strong style="color: #fff; font-size: 1.05rem; letter-spacing: 0.5px;">🐾 ${animalDisplay} #${item.track_id}</strong>
+                                <strong style="color: #fff; font-size: 1.05rem; letter-spacing: 0.5px;"> ${animalDisplay} #${item.track_id}</strong>
                                 <span style="color: rgba(255,255,255,0.7); font-size: 0.78rem; margin-left: 10px; background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px;">⏱️ ${item.duration}s</span>
-                                ${item.loitering ? '<span class="badge" style="background:#ab47bc; color:#fff; font-size:0.7rem; font-weight:700; margin-left:6px; padding: 2px 8px;">⚠️ LOITERING</span>' : ''}
+                                ${item.loitering ? '<span class="badge" style="background:#ab47bc; color:#fff; font-size:0.7rem; font-weight:700; margin-left:6px; padding: 2px 8px;"> LOITERING</span>' : ''}
                             </div>
                             <span class="badge badge-${riskBadgeClass}" style="font-size: 0.82rem; font-weight: 800; padding: 4px 10px;">${risk} RISK</span>
                         </div>

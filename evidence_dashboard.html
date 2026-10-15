@@ -4,26 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WildAI - Wildlife Evidence Verification Dashboard</title>
-    <!-- Leaflet GIS Map -->
+    <!-- Typography & Leaflet GIS Map -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --panel-dark: #1e293b;
-            --panel-card: #243247;
-            --text-light: #f8fafc;
-            --text-muted: #94a3b8;
-            --primary: #3b82f6;
-            --accent: #10b981;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-            --border: #334155;
+            --bg-dark: #0c1711;
+            --panel-dark: #13241b;
+            --panel-card: #1a2f23;
+            --text-light: #f4f8f5;
+            --text-muted: #889e90;
+            --primary: #c78629;
+            --accent: #2e7d32;
+            --warning: #d97706;
+            --danger: #c23934;
+            --border: #223829;
         }
 
         * { box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
             background-color: var(--bg-dark);
             color: var(--text-light);
             margin: 0;
@@ -413,8 +416,8 @@
                         <input type="text" id="reviewerNotes" placeholder="Enter officer verification notes..." style="flex: 1; background: #0f172a; border: 1px solid var(--border); color: #fff; padding: 8px 12px; border-radius: 6px;">
                     </div>
                     <div class="action-row">
-                        <button class="btn-act btn-verify" onclick="submitReview('VERIFIED')">✓ Verify Evidence</button>
-                        <button class="btn-act btn-reject" onclick="submitReview('REJECTED')">✕ Reject Submission</button>
+                        <button class="btn-act btn-verify" onclick="submitReview('VERIFIED')">Verify Evidence</button>
+                        <button class="btn-act btn-reject" onclick="submitReview('REJECTED')">Reject Submission</button>
                         <button class="btn-act btn-review" onclick="submitReview('UNDER_REVIEW')">⟳ Flag for Field Team</button>
                     </div>
 

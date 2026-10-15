@@ -4,100 +4,437 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Admin login for wildlife monitoring system">
-    <title>Admin Login - WildAI</title>
+    <meta name="description" content="Forest Officer & Authority Secure Portal - WildAI Wildlife Conservation System">
+    <title>Authority Login — WildAI Conservation & Protection</title>
     <link rel="stylesheet" href="styles.css">
+    <style>
+        .login-page-wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: linear-gradient(180deg, rgba(10, 24, 16, 0.72) 0%, rgba(8, 18, 12, 0.88) 100%),
+                        url('elephant-forest.jpg') center/cover no-repeat fixed;
+            position: relative;
+        }
+
+        .login-header-nav {
+            padding: 1.25rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(10, 22, 15, 0.65);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(227, 222, 207, 0.12);
+        }
+
+        .brand-lockup {
+            display: flex;
+            align-items: center;
+            gap: 0.875rem;
+            text-decoration: none;
+        }
+
+        .brand-lockup img {
+            height: 44px;
+            width: auto;
+            border-radius: 8px;
+            border: 1px solid rgba(199, 134, 41, 0.4);
+        }
+
+        .brand-title {
+            font-family: var(--font-heading);
+            font-weight: 700;
+            font-size: 1.35rem;
+            letter-spacing: 0.05em;
+            color: #ffffff;
+            margin: 0;
+            text-transform: uppercase;
+        }
+
+        .brand-tagline {
+            font-size: 0.75rem;
+            color: var(--color-secondary-light);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .nav-right-actions {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+        }
+
+        .nav-right-actions a {
+            color: rgba(255, 255, 255, 0.85);
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: color var(--transition-fast);
+        }
+
+        .nav-right-actions a:hover {
+            color: var(--color-secondary-light);
+        }
+
+        .login-main-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem 1.5rem;
+        }
+
+        .login-card-luxury {
+            width: 100%;
+            max-width: 480px;
+            background: rgba(17, 34, 24, 0.82);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(199, 134, 41, 0.3);
+            border-radius: var(--radius-xl);
+            padding: 2.75rem 2.5rem;
+            box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .login-card-luxury::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--color-secondary), var(--color-secondary-light), var(--color-sage));
+        }
+
+        .login-badge-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 14px;
+            border-radius: 9999px;
+            background: rgba(199, 134, 41, 0.16);
+            border: 1px solid rgba(199, 134, 41, 0.35);
+            color: var(--color-secondary-light);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 1rem;
+        }
+
+        .login-card-title {
+            font-family: var(--font-heading);
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin: 0 0 0.5rem 0;
+            letter-spacing: -0.01em;
+        }
+
+        .login-card-sub {
+            color: rgba(230, 240, 232, 0.72);
+            font-size: 0.95rem;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+
+        .custom-input-group {
+            margin-bottom: 1.35rem;
+        }
+
+        .custom-input-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: rgba(240, 248, 242, 0.9);
+            margin-bottom: 0.5rem;
+        }
+
+        .input-with-icon-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-icon-left {
+            position: absolute;
+            left: 14px;
+            width: 18px;
+            height: 18px;
+            color: rgba(200, 215, 205, 0.55);
+            pointer-events: none;
+        }
+
+        .custom-input-control {
+            width: 100%;
+            background: rgba(10, 22, 15, 0.75);
+            border: 1px solid rgba(227, 222, 207, 0.22);
+            border-radius: var(--radius-md);
+            padding: 0.85rem 1rem 0.85rem 2.75rem;
+            color: #ffffff;
+            font-family: var(--font-primary);
+            font-size: 0.95rem;
+            transition: all var(--transition-fast);
+            outline: none;
+        }
+
+        .custom-input-control:focus {
+            border-color: var(--color-secondary);
+            box-shadow: 0 0 0 3px rgba(199, 134, 41, 0.2);
+            background: rgba(10, 22, 15, 0.95);
+        }
+
+        .custom-input-control::placeholder {
+            color: rgba(180, 200, 185, 0.4);
+        }
+
+        .toggle-password-btn {
+            position: absolute;
+            right: 12px;
+            background: none;
+            border: none;
+            color: rgba(200, 215, 205, 0.6);
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color var(--transition-fast);
+        }
+
+        .toggle-password-btn:hover {
+            color: var(--color-secondary-light);
+        }
+
+        .login-actions-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.75rem;
+            font-size: 0.875rem;
+        }
+
+        .remember-checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: rgba(240, 248, 242, 0.8);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .remember-checkbox-label input[type="checkbox"] {
+            accent-color: var(--color-secondary);
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .btn-luxury-submit {
+            width: 100%;
+            padding: 0.95rem 1.5rem;
+            background: linear-gradient(135deg, var(--color-secondary) 0%, #aa6d1b 100%);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: var(--radius-md);
+            color: #ffffff;
+            font-family: var(--font-heading);
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: all var(--transition-base);
+            box-shadow: 0 8px 24px rgba(170, 109, 27, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn-luxury-submit:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px rgba(170, 109, 27, 0.5);
+            background: linear-gradient(135deg, var(--color-secondary-light) 0%, var(--color-secondary) 100%);
+        }
+
+        .btn-luxury-submit:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .credentials-callout {
+            margin-top: 1.75rem;
+            padding: 1rem 1.25rem;
+            background: rgba(10, 22, 15, 0.6);
+            border-radius: var(--radius-md);
+            border-left: 3px solid var(--color-secondary);
+            font-size: 0.85rem;
+            color: rgba(230, 240, 235, 0.85);
+            line-height: 1.5;
+        }
+
+        .credentials-callout strong {
+            color: var(--color-secondary-light);
+        }
+
+        .footer-note {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.85rem;
+            color: rgba(240, 248, 242, 0.6);
+        }
+
+        .footer-note a {
+            color: var(--color-secondary-light);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .footer-note a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 640px) {
+            .login-card-luxury {
+                padding: 2rem 1.5rem;
+            }
+            .login-header-nav {
+                padding: 1rem;
+            }
+        }
+    </style>
 </head>
 
 <body>
-    <!-- Navigation Bar -->
-    <nav class="navbar" id="navbar">
-        <div class="container">
+    <div class="login-page-wrapper">
+        <!-- Top Navigation -->
+        <header class="login-header-nav">
             <a href="index.html" class="navbar-brand">
-                <img src="logo.jpg" alt="WildAI Logo"
-                    style="height: 48px; border-radius: 12px; border: 2px solid var(--color-secondary-light);">
-                <span data-lang="brand">WildAI</span>
-            </a>
-            <ul class="navbar-menu">
-                <li><a href="index.html" data-lang="nav-home">Home</a></li>
-                <li><a href="user-portal.html" data-lang="nav-portal">User Portal</a></li>
-                <li class="lang-switcher">
-                    <button class="lang-btn" data-lang-switch="en" id="langEn">English</button>
-                    <button class="lang-btn" data-lang-switch="ml" id="langMl">മലയാളം</button>
-                </li>
-            </ul>
-        </div>
-    </nav>
-
-    <!-- Login Section -->
-    <section class="hero"
-        style="min-height: 100vh; background-image: linear-gradient(rgba(0,0,0,0.4), rgba(0,0,0,0.4)), url('https://th-i.thgim.com/public/incoming/o8ko7w/article70068731.ece/alternates/FREE_1200/6678_21_7_2025_16_22_4_3_TUSKER_1.JPG'); background-size: cover; background-position: center; background-attachment: fixed;">
-        <div class="container">
-            <div class="fade-in" style="max-width: 500px; margin: 0 auto;">
-                <div class="card" style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px);">
-                    <div style="text-align: center; margin-bottom: var(--space-xl);">
-                        <div
-                            style="font-size: 1.5rem; font-weight: 800; color: var(--color-primary); margin-bottom: var(--space-md);">
-                            ADMIN</div>
-                        <h2 style="color: var(--color-primary); margin-bottom: var(--space-xs);"
-                            data-lang="admin-title">Forest Officer Login
-                        </h2>
-                        <p style="color: var(--color-text-secondary);" data-lang="admin-subtitle">Access the admin
-                            dashboard</p>
-                    </div>
-
-                    <form id="loginForm">
-                        <div class="form-group">
-                            <label class="form-label" data-lang="officer-id-label">Officer ID</label>
-                            <input type="text" class="form-input" id="officerId"
-                                data-lang-placeholder="officer-id-placeholder" placeholder="Enter your officer ID"
-                                required>
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label" data-lang="password-label">Password</label>
-                            <input type="password" class="form-input" id="password"
-                                data-lang-placeholder="password-placeholder" placeholder="Enter your password" required>
-                        </div>
-
-                        <div class="form-group" style="display: flex; align-items: center; gap: var(--space-xs);">
-                            <input type="checkbox" id="rememberMe" style="width: auto;">
-                            <label for="rememberMe"
-                                style="margin: 0; font-weight: 400; color: var(--color-text-secondary);"
-                                data-lang="remember-me">Remember
-                                me</label>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary w-full btn-lg">
-                            <span data-lang="login-btn">Login to Dashboard</span>
-                        </button>
-                    </form>
-
-                    <div
-                        style="margin-top: var(--space-lg); padding-top: var(--space-lg); border-top: 1px solid var(--color-border); text-align: center;">
-                        <p style="color: var(--color-text-secondary); font-size: 0.875rem;">
-                            <span data-lang="demo-creds">Demo credentials:</span> <br>
-                            <strong>ID:</strong> officer123 | <strong>Password:</strong> demo123
-                        </p>
-                    </div>
-
-                    <div style="margin-top: var(--space-md); text-align: center;">
-                        <a href="index.html" style="color: var(--color-secondary); font-size: 0.875rem;"
-                            data-lang="back-home">
-                            Back to Home
-                        </a>
-                    </div>
+                <img src="logo.jpg" alt="WildAI Logo" style="height: 44px; border-radius: 8px; border: 1.5px solid var(--color-secondary);">
+                <div>
+                    <span data-lang="brand" style="font-weight: 800; letter-spacing: 0.04em;">WildAI</span>
+                    <span style="display: block; font-size: 0.65rem; color: var(--color-secondary); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">Conservation Tech</span>
                 </div>
-
-                <div style="margin-top: var(--space-lg); text-align: center;">
-                    <p style="color: rgba(255, 255, 255, 0.8); font-size: 0.875rem;" data-lang="assist-text">
-                        For assistance, contact: <strong>support@wildai.org</strong>
-                    </p>
+            </a>
+            <div class="nav-right-actions">
+                <a href="index.html" data-lang="nav-home">Home</a>
+                <a href="user-portal.html" data-lang="nav-portal">User Portal</a>
+                <div class="lang-switch">
+                    <button class="lang-btn active" data-lang-switch="en" id="langEn">EN</button>
+                    <button class="lang-btn" data-lang-switch="ml" id="langMl">മലയാളം</button>
                 </div>
             </div>
-        </div>
-    </section>
+        </header>
 
+        <!-- Main Login Card Area -->
+        <main class="login-main-container">
+            <div class="login-card-luxury">
+                <div style="text-align: center;">
+                    <div class="login-badge-pill">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        <span>Official Personnel Only</span>
+                    </div>
+                    <h2 class="login-card-title" data-lang="admin-title">Forest Officer Login</h2>
+                    <p class="login-card-sub" data-lang="admin-subtitle">Secure gateway for surveillance telemetry, incident dispatch, and evidence review.</p>
+                </div>
+
+                <form id="loginForm" autocomplete="off">
+                    <div class="custom-input-group">
+                        <label class="custom-input-label" for="officerId" data-lang="officer-id-label">Officer ID / Username</label>
+                        <div class="input-with-icon-wrapper">
+                            <svg class="input-icon-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                                <circle cx="12" cy="7" r="4"></circle>
+                            </svg>
+                            <input type="text" class="custom-input-control" id="officerId" name="officerId"
+                                data-lang-placeholder="officer-id-placeholder" placeholder="e.g. officer123 or admin" required autocomplete="off">
+                        </div>
+                    </div>
+
+                    <div class="custom-input-group">
+                        <label class="custom-input-label" for="password" data-lang="password-label">Authorization Password</label>
+                        <div class="input-with-icon-wrapper">
+                            <svg class="input-icon-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                            <input type="password" class="custom-input-control" id="password" name="password"
+                                data-lang-placeholder="password-placeholder" placeholder="••••••••" required autocomplete="off" style="padding-right: 2.75rem;">
+                            <button type="button" class="toggle-password-btn" id="togglePasswordBtn" aria-label="Toggle password visibility">
+                                <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="login-actions-row">
+                        <label class="remember-checkbox-label" for="rememberMe">
+                            <input type="checkbox" id="rememberMe">
+                            <span data-lang="remember-me">Remember officer session</span>
+                        </label>
+                        <a href="index.html" style="color: rgba(240, 248, 242, 0.7); text-decoration: none;" data-lang="back-home">Back to Home</a>
+                    </div>
+
+                    <button type="submit" class="btn-luxury-submit" id="submitLoginBtn">
+                        <span data-lang="login-btn">Authorize & Enter Dashboard</span>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                            <polyline points="12 5 19 12 12 19"></polyline>
+                        </svg>
+                    </button>
+                </form>
+
+                <div class="credentials-callout">
+                    <span data-lang="demo-creds">Authorized Credentials:</span><br>
+                    <strong>ID:</strong> <code>officer123</code> &nbsp;|&nbsp; <strong>Password:</strong> <code>demo123</code><br>
+                    <span style="font-size: 0.78rem; opacity: 0.85;">(System Administrator: <code>admin</code> / <code>admin123</code>)</span>
+                </div>
+
+                <div class="footer-note">
+                    <span data-lang="assist-text">Need tactical deployment assistance?</span><br>
+                    Contact: <a href="mailto:support@wildai.org">support@wildai.org</a>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Show / Hide Password Script and Field Purge -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Guarantee blank fields upon every page load or return
+            var idEl = document.getElementById('officerId');
+            var pwEl = document.getElementById('password');
+            if (idEl) idEl.value = '';
+            if (pwEl) pwEl.value = '';
+
+            // Password reveal toggle
+            var toggleBtn = document.getElementById('togglePasswordBtn');
+            var eyeIcon = document.getElementById('eyeIcon');
+            if (toggleBtn && pwEl) {
+                toggleBtn.addEventListener('click', function() {
+                    if (pwEl.type === 'password') {
+                        pwEl.type = 'text';
+                        eyeIcon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
+                    } else {
+                        pwEl.type = 'password';
+                        eyeIcon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>';
+                    }
+                });
+            }
+        });
+    </script>
     <script src="script.js"></script>
 </body>
 

@@ -654,51 +654,51 @@ class WildlifeIoTSystem:
 
                 font = cv2.FONT_HERSHEY_SIMPLEX
                 diag = math.sqrt(w_frame**2 + h_frame**2)
-                # Dynamic large font scaling based on footage resolution
-                scale_title = max(0.80, min(1.35, round(diag / 1350.0, 2)))
-                scale_sub = max(0.75, min(1.25, round(diag / 1500.0, 2)))
-                thick = max(2, min(3, int(diag / 700.0)))
+                # Compact, proportional font scaling (reduced per user request)
+                scale_title = max(0.40, min(0.50, round(diag / 2100.0, 2)))
+                scale_sub = max(0.35, min(0.42, round(diag / 2300.0, 2)))
+                thick = 1
 
                 (w1, h1), _ = cv2.getTextSize(badge_title, font, scale_title, thick)
                 (w2, h2), _ = cv2.getTextSize(badge_behavior, font, scale_sub, thick)
-                pad_x = int(14 * (diag / 800.0))
-                pad_y = int(10 * (diag / 800.0))
+                pad_x = 7
+                pad_y = 5
                 box_w = max(w1, w2) + (pad_x * 2)
-                box_h = h1 + h2 + (pad_y * 3)
+                box_h = h1 + h2 + (pad_y * 2) + 4
 
                 # Ensure box stays within frame boundaries horizontally
-                bx1 = max(10, x1)
-                if bx1 + box_w > w_frame - 10:
-                    bx1 = max(10, w_frame - 10 - box_w)
-                bx2 = min(w_frame - 10, bx1 + box_w)
+                bx1 = max(6, x1)
+                if bx1 + box_w > w_frame - 6:
+                    bx1 = max(6, w_frame - 6 - box_w)
+                bx2 = min(w_frame - 6, bx1 + box_w)
 
-                # Vertical positioning: avoid top HUD (top 50-70px) and avoid clipping
-                hud_margin = int(55 * (diag / 900.0))
-                if y1 - box_h - 10 >= hud_margin:
-                    by1 = y1 - box_h - 6
-                    by2 = y1 - 2
-                elif y2 + box_h + 10 <= h_frame:
-                    by1 = y2 + 4
-                    by2 = y2 + box_h + 8
+                # Vertical positioning: avoid top HUD and avoid clipping
+                hud_margin = 30
+                if y1 - box_h - 4 >= hud_margin:
+                    by1 = y1 - box_h - 4
+                    by2 = y1 - 1
+                elif y2 + box_h + 4 <= h_frame:
+                    by1 = y2 + 2
+                    by2 = y2 + box_h + 4
                 else:
-                    by1 = min(h_frame - box_h - 10, max(hud_margin + 10, y1 + 10))
+                    by1 = min(h_frame - box_h - 6, max(hud_margin + 6, y1 + 6))
                     by2 = by1 + box_h
 
                 # Solid dark backing card for 100% contrast against any background
                 cv2.rectangle(frame, (bx1, by1), (bx2, by2), (10, 14, 20), -1)
-                # Outer border in threat color
-                cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, thick + 1)
-                # Left accent indicator bar
-                accent_w = max(6, int(8 * (diag / 800.0)))
+                # Clean outer border in threat color
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, 1)
+                # Subtle left accent indicator bar
+                accent_w = 4
                 cv2.rectangle(frame, (bx1, by1), (bx1 + accent_w, by2), box_color, -1)
 
-                # Line 1: Title (Bold White text)
+                # Line 1: Title (White text)
                 t1_y = by1 + h1 + pad_y
-                cv2.putText(frame, badge_title, (bx1 + pad_x + 6, t1_y), font, scale_title, (255, 255, 255), thick, cv2.LINE_AA)
+                cv2.putText(frame, badge_title, (bx1 + pad_x + 3, t1_y), font, scale_title, (255, 255, 255), thick, cv2.LINE_AA)
 
-                # Line 2: Behavior (Bold Vibrant Neon Yellow/Cyan text for instant readability)
-                t2_y = t1_y + h2 + pad_y + 4
-                cv2.putText(frame, badge_behavior, (bx1 + pad_x + 6, t2_y), font, scale_sub, (0, 255, 255), thick, cv2.LINE_AA)
+                # Line 2: Behavior (Neon Yellow/Cyan text)
+                t2_y = t1_y + h2 + 4
+                cv2.putText(frame, badge_behavior, (bx1 + pad_x + 3, t2_y), font, scale_sub, (0, 255, 255), thick, cv2.LINE_AA)
 
                 # Trigger alerts for high/critical threats
                 alert_key = f"alert_{formatted_track_id}"
@@ -797,8 +797,8 @@ class WildlifeIoTSystem:
             t_lvl = top_threat.get("risk_level", "LOW")
 
             diag = math.sqrt(w_frame**2 + h_frame**2)
-            scale_hud = max(0.70, min(1.15, round(diag / 1600.0, 2)))
-            thick_hud = max(2, min(3, int(diag / 750.0)))
+            scale_hud = max(0.40, min(0.48, round(diag / 2200.0, 2)))
+            thick_hud = 1
 
             hud_text = f" AI BEHAVIOR: {t_animal} #{t_tid} | {t_beh} | {t_spd} px/s | RISK: {t_risk}% ({t_lvl}) "
             (hw, hh), _ = cv2.getTextSize(hud_text, cv2.FONT_HERSHEY_SIMPLEX, scale_hud, thick_hud)
@@ -808,15 +808,15 @@ class WildlifeIoTSystem:
                 scale_hud = round(scale_hud * ((w_frame - 30) / float(hw)), 2)
                 (hw, hh), _ = cv2.getTextSize(hud_text, cv2.FONT_HERSHEY_SIMPLEX, scale_hud, thick_hud)
 
-            hud_h = int(hh * 2.2) + 16
+            hud_h = hh + 12
             hud_accent = (0, 0, 255) if t_risk >= 75 else ((0, 165, 255) if t_risk >= 50 else (0, 255, 0))
 
             # Full-width dark bar across top
             cv2.rectangle(frame, (0, 0), (w_frame, hud_h), (8, 12, 18), -1)
-            cv2.rectangle(frame, (0, hud_h - 3), (w_frame, hud_h), hud_accent, -1)
+            cv2.rectangle(frame, (0, hud_h - 2), (w_frame, hud_h), hud_accent, -1)
             # Text centered vertically
-            hud_ty = int(hud_h * 0.68)
-            cv2.putText(frame, hud_text, (18, hud_ty), cv2.FONT_HERSHEY_SIMPLEX, scale_hud, (255, 255, 255), thick_hud, cv2.LINE_AA)
+            hud_ty = int(hud_h * 0.72)
+            cv2.putText(frame, hud_text, (12, hud_ty), cv2.FONT_HERSHEY_SIMPLEX, scale_hud, (255, 255, 255), thick_hud, cv2.LINE_AA)
 
         metrics = {
             "fps": round(self.fps, 1),
