@@ -37,7 +37,8 @@ try:
             print(f"Connection failed: {e}")
             time.sleep(0.5)
             
-        # Absolute maximum hardware FPS - No sleep limits
+        # Stream at stable ~30 FPS
+        time.sleep(0.03)
         
 except KeyboardInterrupt:
     print("\nStopping webcam stream.")

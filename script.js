@@ -627,23 +627,62 @@ function changeSectorZone(newZone) {
     }
 }
 
-async function startLiveMonitoring() {
-    const camUrl = prompt("Enter IP Webcam URL (or leave blank to use the default laptop camera):", "http://192.168.1.5:8080");
-    
-    if (camUrl !== null && camUrl.trim() !== "") {
-        let cleanUrl = camUrl.trim();
-        cleanUrl = cleanUrl.replace(".:", ":"); // Fix typo if present
-        if (cleanUrl.endsWith("/")) cleanUrl = cleanUrl.slice(0, -1);
-        
-        try {
-            await fetch('/api/settings/camera', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ url: cleanUrl })
-            });
-        } catch(e) {
-            console.error("Failed to set backend camera", e);
+function selectLocalWebcam() {
+    const ipInput = document.getElementById('ipWebcamInput');
+    if (ipInput) ipInput.value = '';
+    startLiveMonitoring();
+}
+
+function selectIpWebcam() {
+    const ipInput = document.getElementById('ipWebcamInput');
+    if (ipInput) {
+        if (!ipInput.value) {
+            const saved = localStorage.getItem('last_ipcam_url') || '192.168.1.5:8080';
+            ipInput.value = saved;
         }
+        ipInput.focus();
+        showNotification('Enter your phone IP address (e.g. 192.168.29.26:8080) then click Start', 'info');
+    }
+}
+
+async function startLiveMonitoring() {
+    const ipInput = document.getElementById('ipWebcamInput');
+    let camUrl = ipInput ? ipInput.value.trim() : '';
+
+    let targetUrl = "0";
+    if (camUrl && camUrl !== "0" && camUrl.toLowerCase() !== "webcam" && camUrl.toLowerCase() !== "laptop") {
+        let cleanUrl = camUrl.replace(".:", ":").trim();
+        if (cleanUrl.endsWith("/")) cleanUrl = cleanUrl.slice(0, -1);
+        if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") && !cleanUrl.startsWith("rtsp://")) {
+            cleanUrl = "http://" + cleanUrl;
+        }
+        if (!cleanUrl.endsWith("/video") && !cleanUrl.endsWith("/shot.jpg") && !cleanUrl.endsWith(".mp4")) {
+            cleanUrl = cleanUrl + "/video";
+        }
+        targetUrl = cleanUrl;
+        localStorage.setItem('last_ipcam_url', camUrl);
+    } else {
+        targetUrl = "0";
+    }
+
+    const apiBase = (window.location.protocol === 'file:' || !window.location.host) 
+        ? 'http://localhost:8083' 
+        : window.location.origin;
+    
+    try {
+        const sourceLabel = targetUrl === "0" ? "Built-in / USB Webcam" : targetUrl;
+        showNotification(`📹 Connecting ${sourceLabel}...`, 'info');
+        const resp = await fetch(`${apiBase}/api/settings/camera`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ url: targetUrl })
+        });
+        const rdata = await resp.json();
+        if (rdata && rdata.message) {
+            showNotification(`📹 ${rdata.message}`, 'success');
+        }
+    } catch(e) {
+        console.error("Failed to set backend camera", e);
     }
 
     const streamContainer = document.getElementById('liveStreamContainer');
@@ -663,8 +702,25 @@ async function startLiveMonitoring() {
     }
 
     streamContainer.style.display = 'block';
-    streamImg.src = ''; 
-    streamImg.alt = 'Initializing Camera and Pose Model...';
+    
+    // Connect native high-speed MJPEG stream directly for fluid, continuous playback
+    const mjpegUrl = `${apiBase}/video_feed?t=${Date.now()}`;
+    streamImg.src = mjpegUrl;
+    streamImg.alt = 'Live Surveillance Stream Active';
+    
+    let mjpegReconnectTimer = null;
+    streamImg.onerror = () => {
+        console.warn("Live stream interrupted, auto-reconnecting in 1s...");
+        if (!mjpegReconnectTimer) {
+            mjpegReconnectTimer = setTimeout(() => {
+                mjpegReconnectTimer = null;
+                const container = document.getElementById('liveStreamContainer');
+                if (container && container.style.display !== 'none') {
+                    streamImg.src = `${apiBase}/video_feed?t=${Date.now()}`;
+                }
+            }, 1000);
+        }
+    };
     
     if (btnStart) btnStart.style.display = 'none';
     if (btnStop) btnStop.style.display = 'inline-block';
@@ -689,9 +745,12 @@ async function startLiveMonitoring() {
         updateStatusBadge('status-cloud', 'Cloud: 🟡 Connecting...', false);
         
         // Derive dynamic backend URL
+        const wsHost = (window.location.protocol === 'file:' || !window.location.host)
+            ? 'localhost:8083'
+            : window.location.host;
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Connect to the new central cloud inference websocket endpoint
-        const wsUrl = `${protocol}//${window.location.host}/ws/client`;
+        // Connect to the central cloud inference websocket endpoint
+        const wsUrl = `${protocol}//${wsHost}/ws/client`;
         
         if (detectionWs) detectionWs.close();
         
@@ -709,7 +768,7 @@ async function startLiveMonitoring() {
                     
                     if (parsed.type === "camera_status") {
                         const camActive = parsed.status === "connected";
-                        updateStatusBadge('status-camera', camActive ? 'Camera: 🟢 Connected' : 'Camera: 🔴 Disconnected', camActive);
+                        updateStatusBadge('status-camera', camActive ? 'Camera: 🟢 Live Stream' : 'Camera: 🟡 Connecting...', camActive);
                         return;
                     }
                     
@@ -720,33 +779,32 @@ async function startLiveMonitoring() {
                         updateStatusBadge('status-ai', aiActive ? 'AI YOLO: 🟢 Processing' : 'AI YOLO: 🟡 Idle', aiActive);
                         
                         const camActive = parsed.camera_status === "connected";
-                        updateStatusBadge('status-camera', camActive ? 'Camera: 🟢 Connected' : 'Camera: 🔴 Disconnected', camActive);
-                        
-                        // Render Processed Frame with BBox overlays
-                        if (parsed.processed_frame) {
-                            streamImg.src = parsed.processed_frame;
-                            if (streamImg.alt !== 'Live Stream Active') {
-                                streamImg.alt = 'Live Stream Active';
-                            }
-                        }
+                        updateStatusBadge('status-camera', camActive ? 'Camera: 🟢 Live Stream' : 'Camera: 🟡 Connecting...', camActive);
 
                         // Update Real-Time Behavioral Analysis Dashboard & Event Timeline
                         updateBehavioralDashboard(parsed);
 
-                        // Handle Detections Array
+                        // Handle Detections Array - Trigger popups for ANY animal, person, or object detected
                         if (parsed.detections && parsed.detections.length > 0) {
                             // Find primary threat (highest risk score)
-                            const primaryThreat = parsed.detections.reduce((prev, current) => (prev.risk_score > current.risk_score) ? prev : current);
+                            const primaryThreat = parsed.detections.reduce((prev, current) => ((prev.risk_score || 0) > (current.risk_score || 0)) ? prev : current);
                             
+                            const spName = primaryThreat.animal || primaryThreat.species || primaryThreat.class_name || "Target";
+                            let confDisplay = "92%";
+                            if (primaryThreat.confidence !== undefined) {
+                                const c = primaryThreat.confidence;
+                                confDisplay = typeof c === 'number' ? (c > 1.0 ? c : c * 100).toFixed(0) + "%" : String(c);
+                            }
+
                             // Map new cloud format to existing UI format
                             const legacyFormat = {
                                 action: "alert",
-                                species: primaryThreat.animal,
-                                confidence: (primaryThreat.confidence * 100).toFixed(0) + "%",
+                                species: spName,
+                                confidence: confDisplay,
                                 image: parsed.processed_frame,
                                 danger_level: primaryThreat.danger_level || 'high',
                                 risk_score: primaryThreat.risk_score || 85,
-                                behaviour: primaryThreat.behaviour || 'MOVING',
+                                behaviour: primaryThreat.behaviour || primaryThreat.behavior || 'Active movement',
                                 pose: primaryThreat.pose_pattern || 'Standard',
                                 group_size: parsed.detections.length,
                                 zone: primaryThreat.zone || 'Zone-A',
@@ -754,13 +812,24 @@ async function startLiveMonitoring() {
                                 sector: currentSectorZone || "Cloud Zone"
                             };
                             
-                            addLiveDetectionToFeed(legacyFormat);
+                            // 1. Continuous telemetry UI updates
                             updatePoseTelemetryUI(legacyFormat);
+                            
+                            // 2. Trigger the visible detection alert modal popup in center of screen
+                            triggerDetectionAlertPopup(legacyFormat);
+                            
+                            // 3. Dispatch deduplicated visible wildlife alert toasts for each detected entity
+                            const camId = parsed.camera_id || 'IP_WEBCAM_01';
+                            parsed.detections.forEach(det => {
+                                handleWildlifeDetectionAlert(det, camId, parsed.processed_frame, legacyFormat);
+                            });
+
+                            // 4. Trigger / Live-update the Side Alert Popup for Admin Portal
+                            showOrUpdateAdminSideAlert(primaryThreat, camId, parsed.processed_frame, parsed.detections);
                             
                             // ── Part 16: Escape Route from Cloud ──
                             if (parsed.escape_route) {
                                 const r = parsed.escape_route;
-                                // Update existing evacuation banner
                                 const banner = document.getElementById('active-evacuation-card');
                                 if (banner) {
                                     banner.style.display = 'block';
@@ -770,7 +839,7 @@ async function startLiveMonitoring() {
                                             <span class="badge" style="background:#f44336;">HEADING: ${r.heading}</span>
                                         </div>
                                         <p style="margin:4px 0;font-size:0.9rem;">
-                                            🐾 <strong>${primaryThreat.animal.toUpperCase()}</strong> detected in <em>${primaryThreat.zone || 'Zone-A'}</em> — 
+                                             🐾 <strong>${primaryThreat.animal.toUpperCase()}</strong> detected in <em>${primaryThreat.zone || 'Zone-A'}</em> — 
                                             Behaviour: <strong>${primaryThreat.behaviour || 'MOVING'}</strong>
                                         </p>
                                         <p style="margin:4px 0;font-size:0.9rem;">
@@ -780,7 +849,6 @@ async function startLiveMonitoring() {
                                         <p style="margin:4px 0;font-size:0.85rem;opacity:0.7;">📞 ${r.contact} &nbsp;|&nbsp; ⚠️ ${r.note}</p>
                                     `;
                                 }
-                                // Trigger existing GIS map update with cloud data
                                 updateGeospatialEvacuationRoute(primaryThreat.animal, currentSectorZone, primaryThreat.risk_score || 85);
                             }
                         }
@@ -847,7 +915,10 @@ function stopDetectionStream() {
     if (streamContainer) streamContainer.style.display = 'none';
     
     const streamImg = document.getElementById('video-stream');
-    if (streamImg) streamImg.src = '';
+    if (streamImg) {
+        streamImg.src = '';
+        streamImg.removeAttribute('src');
+    }
 
     const btnStart = document.getElementById('btn-start-monitoring');
     const btnStop = document.getElementById('btn-stop-monitoring');
@@ -858,16 +929,45 @@ function stopDetectionStream() {
 }
 
 function simulateDetection() {
+    const streamImg = document.getElementById('video-stream');
     const mockData = {
-        action: "alert",
-        species: "Tiger",
-        confidence: "98%",
-        image: "tiger_preview.jpg", // Using existing preview image
-        danger_level: "high"
+        animal: "Person",
+        species: "Person",
+        confidence: 0.98,
+        image: (streamImg && streamImg.src && !streamImg.src.includes('video_feed')) ? streamImg.src : "logo.jpg",
+        danger_level: "high",
+        risk_level: "HIGH",
+        risk_score: 94,
+        behaviour: "Walking / Approaching Sector Boundary",
+        behavior: "Walking / Approaching Sector Boundary",
+        pose: "Observable behavior: walking",
+        group_size: 1,
+        zone: "Zone-A (Corridor)",
+        track_id: `SIM_${Date.now()}`,
+        sector: currentSectorZone || "Zone 1 - Forest Border"
     };
     
-    showNotification('🧪 Simulating AI detection event...', 'info');
-    addLiveDetectionToFeed(mockData);
+    showNotification('🧪 Simulating wildlife intrusion alert...', 'info');
+    
+    const legacyFormat = {
+        action: "alert",
+        species: "Person",
+        confidence: "98%",
+        image: mockData.image,
+        danger_level: "high",
+        risk_score: 94,
+        behaviour: "Walking / Approaching Sector Boundary",
+        pose: "Observable behavior: walking",
+        group_size: 1,
+        zone: "Zone-A (Corridor)",
+        track_id: mockData.track_id,
+        sector: currentSectorZone || "Zone 1 - Forest Border"
+    };
+
+    updatePoseTelemetryUI(legacyFormat);
+    triggerDetectionAlertPopup(legacyFormat);
+    handleWildlifeDetectionAlert(mockData, 'CAM_SIM_01', mockData.image, legacyFormat);
+    showOrUpdateAdminSideAlert(mockData, 'CAM_SIM_01', mockData.image, [mockData]);
 }
 
 function addLiveDetectionToFeed(data) {
@@ -876,14 +976,20 @@ function addLiveDetectionToFeed(data) {
 
     let danger = "medium";
     let icon = "🐾";
-    const speciesLower = data.species.toLowerCase();
+    const speciesLower = (data.species || 'target').toLowerCase();
     
-    if (speciesLower === "tiger" || speciesLower === "leopard" || speciesLower === "poacher") {
+    if (speciesLower.includes("tiger") || speciesLower.includes("leopard") || speciesLower.includes("poacher") || speciesLower.includes("person")) {
         danger = "high";
-        icon = speciesLower === "poacher" ? "🚨" : "🐅";
-    } else if (speciesLower === "elephant") {
+        icon = (speciesLower.includes("person") || speciesLower.includes("poacher")) ? "👤" : (speciesLower.includes("tiger") ? "🐅" : "🐆");
+    } else if (speciesLower.includes("elephant")) {
         danger = "medium";
         icon = "🐘";
+    } else if (speciesLower.includes("bear")) {
+        danger = "high";
+        icon = "🐻";
+    } else if (speciesLower.includes("boar")) {
+        danger = "medium";
+        icon = "🐗";
     }
 
     const timeStr = new Date().toLocaleTimeString();
@@ -891,15 +997,17 @@ function addLiveDetectionToFeed(data) {
     const newDetection = document.createElement('div');
     newDetection.className = `detection-item ${danger}-danger`;
     
+    const previewImg = data.image ? `<img src="${data.image}" alt="Preview" style="width: 120px; height: 80px; object-fit: cover; border-radius: var(--radius-sm); border: 2px solid ${danger === 'high' ? 'var(--color-danger-high)' : 'var(--color-warning)'};">` : '';
+
     newDetection.innerHTML = `
       <div style="display: flex; gap: var(--space-md); align-items: start;">
-        <img src="${data.image}" alt="Preview" style="width: 120px; height: 80px; object-fit: cover; border-radius: var(--radius-sm); border: 2px solid ${danger === 'high' ? 'var(--color-danger-high)' : 'var(--color-warning)'};">
+        ${previewImg}
         <div style="flex: 1;">
           <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--space-xs);">
             <div style="display: flex; align-items: center; gap: var(--space-sm);">
               <span style="font-size: 1.5rem;">${icon}</span>
               <div>
-                <div style="font-weight: 600; color: var(--color-text-light);">${data.species.toUpperCase()}</div>
+                <div style="font-weight: 600; color: var(--color-text-light); text-transform: uppercase;">${data.species}</div>
                 <div style="font-size: 0.875rem; color: rgba(255, 255, 255, 0.6);">📹 LIVE FEED</div>
               </div>
             </div>
@@ -921,13 +1029,856 @@ function addLiveDetectionToFeed(data) {
 
     // Automatically calculate and display evacuation route on GIS map when animal is shown
     updateGeospatialEvacuationRoute(data.species, currentSectorZone, data.risk_score || 85);
+}
 
-    // Popup verification logic
+// ===================================================================
+// DEDUPLICATED VISIBLE WILDLIFE DETECTION ALERT TOAST NOTIFICATION SYSTEM
+// ===================================================================
+const activeDetectionAlertCooldowns = new Map();
+const ALERT_COOLDOWN_MS = 10000; // 10s cooldown per unique track/encounter
+let toastCounter = 0;
+
+function handleWildlifeDetectionAlert(det, cameraId, frameSnapshot, legacyFormat) {
+    if (!det) return;
+    const species = (det.animal || det.species || det.class_name || 'Target');
+    const trackId = det.track_id !== undefined ? String(det.track_id) : 'primary';
+    const dedupKey = `${cameraId}_${species.toLowerCase()}_${trackId}`;
+
     const now = Date.now();
-    const isSameSpecies = lastPopupSpecies === data.species;
-    const cooldownPeriod = 30000; // 30 seconds
+    const lastAlertTime = activeDetectionAlertCooldowns.get(dedupKey) || 0;
 
-    if (!isSameSpecies || (now - lastPopupTime) > cooldownPeriod) {
+    if (now - lastAlertTime < ALERT_COOLDOWN_MS) {
+        // Suppress duplicate popup for ongoing encounter within cooldown window
+        return;
+    }
+
+    // Record deduplication timestamp for this encounter
+    activeDetectionAlertCooldowns.set(dedupKey, now);
+
+    // Format confidence
+    let confPercent = 90;
+    if (det.confidence !== undefined) {
+        const c = det.confidence;
+        confPercent = typeof c === 'number' ? Math.round(c > 1.0 ? c : c * 100) : parseInt(c) || 90;
+    }
+
+    const riskScore = det.risk_score || (det.danger_level === 'high' ? 88 : 65);
+    const riskLevel = det.risk_level || det.danger_level || (riskScore >= 70 ? 'HIGH' : (riskScore >= 40 ? 'MEDIUM' : 'LOW'));
+    const behavior = det.behavior || det.behaviour || det.pose || 'Active movement';
+
+    const alertData = {
+        species: species,
+        confidence: confPercent,
+        riskScore: riskScore,
+        riskLevel: riskLevel,
+        behavior: behavior,
+        cameraId: cameraId,
+        trackId: trackId,
+        timestamp: new Date().toLocaleTimeString(),
+        image: frameSnapshot
+    };
+
+    // 1. Show immediate, prominent in-dashboard toast popup
+    showWildlifeAlertToast(alertData);
+
+    // 2. Add to persistent detection history log
+    if (legacyFormat) {
+        addLiveDetectionToFeed(legacyFormat);
+    } else {
+        addLiveDetectionToFeed({
+            species: species,
+            confidence: `${confPercent}%`,
+            image: frameSnapshot || 'logo.jpg',
+            danger_level: riskLevel.toLowerCase(),
+            risk_score: riskScore,
+            behaviour: behavior
+        });
+    }
+
+    // 3. Audio alert chime (synthesizer Web Audio API)
+    playAlertChime();
+
+    // 4. Desktop OS browser notification
+    sendDesktopBrowserNotification(species, confPercent, riskLevel, cameraId);
+
+    // 5. Trigger automated SMS dispatch if configured
+    if (autoSmsEnabled || currentSystemSettings.auto_response_mode === 'full') {
+        console.log(`[Auto-SMS] Dispatching automated alert for ${species}`);
+        showNotification(`⚡ Auto-SMS Dispatched for ${species.toUpperCase()}`, 'warning');
+    }
+}
+
+function getDetectionClassMeta(rawName) {
+    const name = (rawName || 'target').toLowerCase().trim();
+    
+    // Human / Person
+    if (name.includes('person') || name.includes('human') || name.includes('poacher') || name.includes('man') || name.includes('woman')) {
+        return { 
+            icon: '👤', 
+            title: '🚨 PERSON DETECTED!', 
+            category: 'Human Intrusion & Security Alert', 
+            display: 'PERSON (HUMAN INTRUDER)', 
+            isHigh: true, 
+            dangerLevel: 'high', 
+            riskScore: 88, 
+            accentColor: '#f43f5e', 
+            badgeBg: '#e11d48' 
+        };
+    }
+    // Apex Predators & Carnivores (Tiger & Striped Wildlife)
+    if (name.includes('tiger') || name.includes('cat') || name.includes('zebra') || name.includes('horse') || name.includes('leopard') || name.includes('panther') || name.includes('cheetah') || name.includes('lion')) {
+        return { 
+            icon: '🐅', 
+            title: '🚨 TIGER DETECTED!', 
+            category: 'Apex Predator Intrusion Alert', 
+            display: 'TIGER (CARNIVORE)', 
+            isHigh: true, 
+            dangerLevel: 'critical', 
+            riskScore: 95, 
+            accentColor: '#ef4444', 
+            badgeBg: '#dc2626' 
+        };
+    }
+    if (name.includes('lion')) {
+        return { 
+            icon: '🦁', 
+            title: '🚨 LION DETECTED!', 
+            category: 'Apex Predator Intrusion Alert', 
+            display: 'LION (CARNIVORE)', 
+            isHigh: true, 
+            dangerLevel: 'critical', 
+            riskScore: 95, 
+            accentColor: '#ef4444', 
+            badgeBg: '#dc2626' 
+        };
+    }
+    if (name.includes('bear')) {
+        return { 
+            icon: '🐻', 
+            title: '🚨 BEAR DETECTED!', 
+            category: 'Large Carnivore Intrusion Alert', 
+            display: 'BEAR (WILDLIFE)', 
+            isHigh: true, 
+            dangerLevel: 'high', 
+            riskScore: 86, 
+            accentColor: '#8b5cf6', 
+            badgeBg: '#7c3aed' 
+        };
+    }
+    // Megaherbivores & Large Wildlife
+    if (name.includes('elephant')) {
+        return { 
+            icon: '🐘', 
+            title: '🚨 ELEPHANT DETECTED!', 
+            category: 'Megaherbivore Wildlife Intrusion Alert', 
+            display: 'ELEPHANT (WILDLIFE)', 
+            isHigh: true, 
+            dangerLevel: 'critical', 
+            riskScore: 90, 
+            accentColor: '#f59e0b', 
+            badgeBg: '#d97706' 
+        };
+    }
+    if (name.includes('boar') || name.includes('pig')) {
+        return { 
+            icon: '🐗', 
+            title: '🚨 WILD BOAR DETECTED!', 
+            category: 'Agricultural Pest Intrusion Alert', 
+            display: 'WILD BOAR (WILDLIFE)', 
+            isHigh: true, 
+            dangerLevel: 'high', 
+            riskScore: 78, 
+            accentColor: '#f59e0b', 
+            badgeBg: '#b45309' 
+        };
+    }
+    if (name.includes('deer')) {
+        return { 
+            icon: '🦌', 
+            title: '🚨 DEER DETECTED!', 
+            category: 'Herbivore Wildlife Movement', 
+            display: 'DEER (WILDLIFE)', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 55, 
+            accentColor: '#10b981', 
+            badgeBg: '#059669' 
+        };
+    }
+    if (name.includes('monkey') || name.includes('ape')) {
+        return { 
+            icon: '🐒', 
+            title: '🚨 MONKEY DETECTED!', 
+            category: 'Wildlife Primate Activity', 
+            display: 'MONKEY (PRIMATE)', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 60, 
+            accentColor: '#f59e0b', 
+            badgeBg: '#d97706' 
+        };
+    }
+    // Domestic Animals
+    if (name.includes('dog')) {
+        return { 
+            icon: '🐕', 
+            title: '🚨 DOG DETECTED!', 
+            category: 'Domestic Canine Alert', 
+            display: 'DOG (CANINE)', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 50, 
+            accentColor: '#38bdf8', 
+            badgeBg: '#0284c7' 
+        };
+    }
+    if (name.includes('cat')) {
+        return { 
+            icon: '🐈', 
+            title: '🚨 CAT DETECTED!', 
+            category: 'Domestic Feline Alert', 
+            display: 'CAT (FELINE)', 
+            isHigh: false, 
+            dangerLevel: 'low', 
+            riskScore: 35, 
+            accentColor: '#a855f7', 
+            badgeBg: '#9333ea' 
+        };
+    }
+    if (name.includes('bird')) {
+        return { 
+            icon: '🦅', 
+            title: '🚨 BIRD DETECTED!', 
+            category: 'Avian Wildlife Activity', 
+            display: 'BIRD (AVIAN)', 
+            isHigh: false, 
+            dangerLevel: 'low', 
+            riskScore: 30, 
+            accentColor: '#06b6d4', 
+            badgeBg: '#0891b2' 
+        };
+    }
+    if (name.includes('cow') || name.includes('cattle') || name.includes('bull')) {
+        return { 
+            icon: '🐂', 
+            title: '🚨 CATTLE DETECTED!', 
+            category: 'Livestock Animal Activity', 
+            display: 'CATTLE / LIVESTOCK', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 60, 
+            accentColor: '#eab308', 
+            badgeBg: '#ca8a04' 
+        };
+    }
+    if (name.includes('horse') || name.includes('zebra')) {
+        return { 
+            icon: '🐎', 
+            title: '🚨 EQUINE DETECTED!', 
+            category: 'Equine Animal Activity', 
+            display: 'HORSE (EQUINE)', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 50, 
+            accentColor: '#eab308', 
+            badgeBg: '#ca8a04' 
+        };
+    }
+    if (name.includes('sheep') || name.includes('goat')) {
+        return { 
+            icon: '🐑', 
+            title: '🚨 LIVESTOCK DETECTED!', 
+            category: 'Small Livestock Activity', 
+            display: 'SHEEP / GOAT', 
+            isHigh: false, 
+            dangerLevel: 'low', 
+            riskScore: 40, 
+            accentColor: '#10b981', 
+            badgeBg: '#059669' 
+        };
+    }
+    // Objects & Tools
+    if (name.includes('cell phone') || name.includes('phone')) {
+        return { 
+            icon: '📱', 
+            title: '🚨 CELL PHONE DETECTED!', 
+            category: 'Electronic Device Detection', 
+            display: 'CELL PHONE (DEVICE)', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 55, 
+            accentColor: '#06b6d4', 
+            badgeBg: '#0891b2' 
+        };
+    }
+    if (name.includes('bottle')) {
+        return { 
+            icon: '🍾', 
+            title: '🚨 BOTTLE DETECTED!', 
+            category: 'Object / Container Detection', 
+            display: 'BOTTLE (OBJECT)', 
+            isHigh: false, 
+            dangerLevel: 'low', 
+            riskScore: 35, 
+            accentColor: '#38bdf8', 
+            badgeBg: '#0284c7' 
+        };
+    }
+    if (name.includes('cup')) {
+        return { 
+            icon: '☕', 
+            title: '🚨 CUP DETECTED!', 
+            category: 'Object / Tableware Detection', 
+            display: 'CUP (OBJECT)', 
+            isHigh: false, 
+            dangerLevel: 'low', 
+            riskScore: 30, 
+            accentColor: '#f97316', 
+            badgeBg: '#ea580c' 
+        };
+    }
+    if (name.includes('backpack') || name.includes('bag') || name.includes('suitcase') || name.includes('handbag')) {
+        return { 
+            icon: '🎒', 
+            title: '🚨 BAG / PACK DETECTED!', 
+            category: 'Luggage / Personal Belonging', 
+            display: 'BACKPACK (OBJECT)', 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 55, 
+            accentColor: '#8b5cf6', 
+            badgeBg: '#7c3aed' 
+        };
+    }
+    if (name.includes('chair') || name.includes('couch') || name.includes('sofa') || name.includes('bed')) {
+        return { 
+            icon: '🪑', 
+            title: `🚨 ${name.toUpperCase()} DETECTED!`, 
+            category: 'Indoor Furniture Object', 
+            display: `${name.toUpperCase()} (FURNITURE)`, 
+            isHigh: false, 
+            dangerLevel: 'low', 
+            riskScore: 30, 
+            accentColor: '#64748b', 
+            badgeBg: '#475569' 
+        };
+    }
+    if (name.includes('laptop') || name.includes('computer') || name.includes('keyboard') || name.includes('tv') || name.includes('monitor')) {
+        return { 
+            icon: '💻', 
+            title: `🚨 ${name.toUpperCase()} DETECTED!`, 
+            category: 'Electronic Equipment Detection', 
+            display: `${name.toUpperCase()} (DEVICE)`, 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 50, 
+            accentColor: '#38bdf8', 
+            badgeBg: '#0284c7' 
+        };
+    }
+    if (name.includes('knife') || name.includes('scissors') || name.includes('weapon')) {
+        return { 
+            icon: '🔪', 
+            title: '🚨 SECURITY HAZARD DETECTED!', 
+            category: 'Sharp Tool / Weapon Intrusion', 
+            display: `${name.toUpperCase()} (HAZARD)`, 
+            isHigh: true, 
+            dangerLevel: 'critical', 
+            riskScore: 92, 
+            accentColor: '#ef4444', 
+            badgeBg: '#dc2626' 
+        };
+    }
+    if (name.includes('car') || name.includes('truck') || name.includes('bus') || name.includes('vehicle')) {
+        return { 
+            icon: '🚗', 
+            title: '🚨 VEHICLE DETECTED!', 
+            category: 'Motor Vehicle Intrusion Alert', 
+            display: `${name.toUpperCase()} (VEHICLE)`, 
+            isHigh: true, 
+            dangerLevel: 'high', 
+            riskScore: 75, 
+            accentColor: '#f59e0b', 
+            badgeBg: '#d97706' 
+        };
+    }
+    if (name.includes('motorcycle') || name.includes('bicycle')) {
+        return { 
+            icon: '🏍️', 
+            title: '🚨 CYCLE DETECTED!', 
+            category: 'Two-Wheeled Vehicle Alert', 
+            display: `${name.toUpperCase()} (VEHICLE)`, 
+            isHigh: false, 
+            dangerLevel: 'medium', 
+            riskScore: 50, 
+            accentColor: '#06b6d4', 
+            badgeBg: '#0891b2' 
+        };
+    }
+    // Universal fallback
+    const cleanU = name.toUpperCase();
+    return {
+        icon: '🎯',
+        title: `🚨 ${cleanU} DETECTED!`,
+        category: 'Detected Target / Object',
+        display: `${cleanU} (DETECTED)`,
+        isHigh: false,
+        dangerLevel: 'medium',
+        riskScore: 60,
+        accentColor: '#38bdf8',
+        badgeBg: '#0284c7'
+    };
+}
+
+function showWildlifeAlertToast(data) {
+    let container = document.getElementById('wildlifeDetectionToastContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'wildlifeDetectionToastContainer';
+        document.body.appendChild(container);
+    }
+    
+    const toastId = `wildlife-toast-${++toastCounter}`;
+    const meta = getDetectionClassMeta(data.species);
+    const icon = meta.icon;
+    const title = meta.title;
+    const accentColor = meta.accentColor;
+    const badgeBg = meta.badgeBg;
+    
+    const isHigh = meta.isHigh || (data.riskLevel && data.riskLevel.toUpperCase().includes('HIGH')) || data.riskScore >= 70;
+    const badgeText = isHigh ? 'CRITICAL RISK 🔴' : `${(data.riskLevel || meta.dangerLevel).toUpperCase()} RISK 🟡`;
+    
+    const toast = document.createElement('div');
+    toast.className = 'wildlife-toast-card';
+    toast.id = toastId;
+    toast.style.borderColor = accentColor;
+    toast.style.boxShadow = `0 12px 35px rgba(0,0,0,0.85), 0 0 25px ${accentColor}40`;
+    
+    const thumbnailHtml = data.image ? `
+        <div style="flex-shrink: 0; width: 85px; height: 65px; border-radius: 8px; overflow: hidden; border: 1.5px solid ${accentColor}; background: #000;">
+            <img src="${data.image}" alt="${data.species}" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+        </div>
+    ` : '';
+    
+    toast.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 1.5rem;">${icon}</span>
+                <div>
+                    <div style="font-weight: 800; font-size: 0.95rem; letter-spacing: 0.5px; color: ${accentColor}; text-transform: uppercase;">
+                        ${title}
+                    </div>
+                    <div style="font-size: 0.72rem; color: rgba(255,255,255,0.6);">
+                        📹 ${data.cameraId} &bull; 🕒 ${data.timestamp}
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="background: ${badgeBg}; color: white; padding: 3px 9px; border-radius: 12px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.5px; white-space: nowrap;">
+                    ${badgeText}
+                </span>
+                <button onclick="dismissWildlifeToast('${toastId}')" style="background: transparent; border: none; color: rgba(255,255,255,0.7); font-size: 1.3rem; cursor: pointer; line-height: 1; padding: 0 4px;" title="Dismiss">&times;</button>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: center;">
+            ${thumbnailHtml}
+            <div style="flex: 1; font-size: 0.82rem; line-height: 1.45;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: rgba(255,255,255,0.6);">Animal / Class:</span>
+                    <strong style="color: #ffffff; font-size: 0.92rem; text-transform: capitalize;">${data.species}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: rgba(255,255,255,0.6);">Confidence:</span>
+                    <strong style="color: #4ade80;">${data.confidence}%</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                    <span style="color: rgba(255,255,255,0.6);">Observed Behavior:</span>
+                    <strong style="color: #60a5fa; text-transform: uppercase; font-size: 0.78rem;">${data.behavior.replace(/^Observable behavior:\s*/i, '')}</strong>
+                </div>
+                ${data.trackId !== 'primary' ? `
+                <div style="display: flex; justify-content: space-between;">
+                    <span style="color: rgba(255,255,255,0.6);">Track ID:</span>
+                    <span style="color: #facc15; font-family: monospace; font-size: 0.78rem;">#${data.trackId}</span>
+                </div>` : ''}
+            </div>
+        </div>
+
+        <div style="margin-top: 10px; width: 100%; height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden;">
+            <div id="${toastId}-progress" class="toast-progress-bar" style="background: ${accentColor}; width: 100%;"></div>
+        </div>
+    `;
+    
+    // Prepend so newest is on top
+    container.prepend(toast);
+    
+    // Auto-dismiss after 8 seconds with hover pause
+    let remainingMs = 8000;
+    let startTime = Date.now();
+    let dismissTimer = null;
+    const progressEl = document.getElementById(`${toastId}-progress`);
+    
+    if (progressEl) {
+        progressEl.style.transition = `width ${remainingMs}ms linear`;
+        setTimeout(() => { progressEl.style.width = '0%'; }, 50);
+    }
+    
+    function startTimer() {
+        startTime = Date.now();
+        dismissTimer = setTimeout(() => {
+            dismissWildlifeToast(toastId);
+        }, remainingMs);
+        if (progressEl) {
+            progressEl.style.transition = `width ${remainingMs}ms linear`;
+            progressEl.style.width = '0%';
+        }
+    }
+    
+    function pauseTimer() {
+        if (dismissTimer) clearTimeout(dismissTimer);
+        const elapsed = Date.now() - startTime;
+        remainingMs = Math.max(500, remainingMs - elapsed);
+        if (progressEl) {
+            const computedWidth = window.getComputedStyle(progressEl).width;
+            progressEl.style.transition = 'none';
+            progressEl.style.width = computedWidth;
+        }
+    }
+    
+    toast.addEventListener('mouseenter', pauseTimer);
+    toast.addEventListener('mouseleave', startTimer);
+    
+    startTimer();
+}
+
+function dismissWildlifeToast(toastId) {
+    const el = document.getElementById(toastId);
+    if (!el) return;
+    el.classList.add('toast-exiting');
+    setTimeout(() => {
+        if (el && el.parentNode) {
+            el.parentNode.removeChild(el);
+        }
+    }, 350);
+}
+
+// ===================================================================
+// DEDICATED ADMIN SIDE DETECTION ALERT POPUP SYSTEM
+// ===================================================================
+const activeAdminSideAlertTimers = new Map();
+
+function showOrUpdateAdminSideAlert(det, cameraId, frameSnapshot, allDetections) {
+    if (!det) return;
+    let container = document.getElementById('adminSideAlertContainer');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'adminSideAlertContainer';
+        document.body.appendChild(container);
+    }
+
+    const species = (det.animal || det.species || det.class_name || 'Target');
+    const trackId = det.track_id !== undefined ? String(det.track_id) : 'P001';
+    const cardId = `admin-side-alert-${trackId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+    
+    // Meta styling
+    const meta = getDetectionClassMeta(species);
+    const riskScore = det.risk_score || (det.danger_level === 'high' ? 88 : 65);
+    const isHigh = meta.isHigh || riskScore >= 70;
+    const dangerLevel = (det.danger_level || (isHigh ? 'critical' : (riskScore >= 45 ? 'medium' : 'low'))).toUpperCase();
+    const accentColor = isHigh ? '#ef4444' : (riskScore >= 45 ? '#f59e0b' : '#10b981');
+    const badgeBg = isHigh ? 'rgba(239, 68, 68, 0.25)' : (riskScore >= 45 ? 'rgba(245, 158, 11, 0.25)' : 'rgba(16, 185, 129, 0.25)');
+    const badgeBorder = isHigh ? '#ef4444' : (riskScore >= 45 ? '#f59e0b' : '#10b981');
+    
+    // Behavior and motion details
+    const rawBeh = (det.behavior || det.behaviour || det.pose || 'Active movement')
+        .replace(/^Observable behavior:\s*/i, '')
+        .replace(/_/g, ' ')
+        .toUpperCase();
+    
+    const speed = det.speed !== undefined ? det.speed : (det.velocity_px_sec || 0);
+    const speedStr = speed > 0.5 ? `${typeof speed === 'number' ? speed.toFixed(1) : speed} px/s` : '';
+    const dir = (det.direction || det.movement_direction || det.movement_vector || '').toUpperCase().replace(/_/g, ' ');
+    const dirStr = (dir && dir !== 'STATIONARY' && dir !== 'NONE' && dir !== 'UNKNOWN') ? dir : '';
+    
+    let behaviorDisplay = rawBeh;
+    if (speedStr) behaviorDisplay += ` • ${speedStr}`;
+    if (dirStr) behaviorDisplay += ` • ${dirStr}`;
+    
+    let confDisplay = '92%';
+    if (det.confidence !== undefined) {
+        const c = det.confidence;
+        confDisplay = typeof c === 'number' ? (c > 1.0 ? c : c * 100).toFixed(0) + '%' : String(c);
+    }
+    
+    const zoneName = det.zone || (typeof currentSectorZone !== 'undefined' ? currentSectorZone : 'Zone-A (Corridor)');
+    const camName = cameraId || 'IP_WEBCAM_01';
+    const timeNow = new Date().toLocaleTimeString();
+
+    // Store as current detection for quick actions (SMS, Sound)
+    currentDetectionData = {
+        species: species,
+        confidence: confDisplay,
+        risk_score: riskScore,
+        image: frameSnapshot,
+        track_id: trackId
+    };
+
+    let existingCard = document.getElementById(cardId);
+    if (existingCard) {
+        // Continuous live update of existing on-screen card
+        const imgEl = existingCard.querySelector('.side-alert-img');
+        if (imgEl && frameSnapshot) imgEl.src = frameSnapshot;
+        
+        const behEl = existingCard.querySelector('.side-alert-beh');
+        if (behEl) behEl.textContent = behaviorDisplay;
+        
+        const riskEl = existingCard.querySelector('.side-alert-risk');
+        if (riskEl) riskEl.textContent = `${riskScore}% ${dangerLevel}`;
+        
+        const timeEl = existingCard.querySelector('.side-alert-time');
+        if (timeEl) timeEl.textContent = `🕒 ${timeNow}`;
+        
+        const progressEl = existingCard.querySelector('.side-alert-bar');
+        if (progressEl) progressEl.style.width = `${Math.min(riskScore, 100)}%`;
+
+        // Reset inactivity dismiss timer
+        resetSideAlertInactivityTimer(cardId);
+        return;
+    }
+
+    // Play chime for newly arriving detection
+    playAlertChime();
+
+    // Build the new side alert card
+    const card = document.createElement('div');
+    card.id = cardId;
+    card.className = 'admin-side-alert-card';
+    card.style.borderColor = accentColor;
+    card.style.boxShadow = `0 16px 40px rgba(0,0,0,0.85), 0 0 25px ${accentColor}40`;
+
+    card.innerHTML = `
+        <div class="admin-side-alert-header">
+            <div class="tag-live" style="color: ${accentColor};">
+                <span class="pulse-dot" style="background: ${accentColor}; box-shadow: 0 0 10px ${accentColor};"></span>
+                <span>🚨 ${meta.title || 'TARGET DETECTED'}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 0.72rem; color: #94a3b8; font-family: monospace;">#${trackId}</span>
+                <button onclick="dismissAdminSideAlert('${cardId}')" style="background: none; border: none; color: #94a3b8; font-size: 1.25rem; cursor: pointer; line-height: 1; padding: 0 4px;" title="Dismiss">&times;</button>
+            </div>
+        </div>
+        <div class="admin-side-alert-body">
+            <div class="admin-side-alert-thumb" style="border-color: ${accentColor};">
+                <img class="side-alert-img" src="${frameSnapshot || 'logo.jpg'}" alt="${species}">
+            </div>
+            <div class="admin-side-alert-info">
+                <div class="admin-side-alert-title">
+                    <span style="display: flex; align-items: center; gap: 6px;">
+                        <span>${meta.icon}</span>
+                        <strong style="text-transform: uppercase; letter-spacing: 0.5px;">${species}</strong>
+                    </span>
+                    <span class="admin-side-alert-badge side-alert-risk" style="background: ${badgeBg}; border: 1px solid ${badgeBorder}; color: ${accentColor};">
+                        ${riskScore}% ${dangerLevel}
+                    </span>
+                </div>
+                
+                <div class="admin-side-alert-behavior side-alert-beh">
+                    ${behaviorDisplay}
+                </div>
+
+                <div class="admin-side-alert-meta" style="margin-top: 4px;">
+                    <span>📍 ${zoneName}</span>
+                    <span>📹 ${camName}</span>
+                    <span class="side-alert-time" style="color: #cbd5e1;">🕒 ${timeNow}</span>
+                </div>
+
+                <!-- Threat Meter -->
+                <div style="margin-top: 6px; width: 100%; height: 4px; background: rgba(255,255,255,0.12); border-radius: 2px; overflow: hidden;">
+                    <div class="side-alert-bar" style="width: ${Math.min(riskScore, 100)}%; height: 100%; background: ${accentColor}; transition: width 0.3s ease;"></div>
+                </div>
+            </div>
+        </div>
+        <div class="admin-side-alert-actions">
+            <button class="admin-side-alert-btn" onclick="triggerAdminDeterrent('${species}')" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.4); color: #fbbf24;" title="Activate audio deterrent siren">
+                🔊 Sound Siren
+            </button>
+            <button class="admin-side-alert-btn" onclick="doSendSms()" style="background: rgba(239, 68, 68, 0.18); border-color: rgba(239, 68, 68, 0.45); color: #f87171;" title="Dispatch emergency SMS notification">
+                📱 Send SMS
+            </button>
+            <button class="admin-side-alert-btn" id="${cardId}-ack" onclick="acknowledgeAdminSideAlert('${cardId}')" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.4); color: #34d399;" title="Mark acknowledged">
+                ✓ Acknowledge
+            </button>
+        </div>
+    `;
+
+    // Limit maximum stacked side alerts to 3
+    while (container.children.length >= 3) {
+        container.removeChild(container.lastElementChild);
+    }
+
+    container.prepend(card);
+    resetSideAlertInactivityTimer(cardId);
+}
+
+function resetSideAlertInactivityTimer(cardId) {
+    if (activeAdminSideAlertTimers.has(cardId)) {
+        clearTimeout(activeAdminSideAlertTimers.get(cardId));
+    }
+    // 7 seconds of inactivity (target left frame) before auto-dismiss
+    const timer = setTimeout(() => {
+        const card = document.getElementById(cardId);
+        if (card) {
+            const behEl = card.querySelector('.side-alert-beh');
+            if (behEl) {
+                behEl.textContent = 'TARGET OUT OF FRAME • MONITORING';
+                behEl.style.color = '#94a3b8';
+                behEl.style.borderColor = '#475569';
+                behEl.style.background = 'rgba(148, 163, 184, 0.1)';
+            }
+            setTimeout(() => {
+                dismissAdminSideAlert(cardId);
+            }, 3000);
+        }
+    }, 7000);
+    activeAdminSideAlertTimers.set(cardId, timer);
+}
+
+function dismissAdminSideAlert(cardId) {
+    const card = document.getElementById(cardId);
+    if (!card) return;
+    if (activeAdminSideAlertTimers.has(cardId)) {
+        clearTimeout(activeAdminSideAlertTimers.get(cardId));
+        activeAdminSideAlertTimers.delete(cardId);
+    }
+    card.classList.add('fade-exit');
+    setTimeout(() => {
+        if (card && card.parentNode) {
+            card.parentNode.removeChild(card);
+        }
+    }, 350);
+}
+
+function acknowledgeAdminSideAlert(cardId) {
+    const ackBtn = document.getElementById(`${cardId}-ack`);
+    if (ackBtn) {
+        ackBtn.innerHTML = '✓ Acknowledged';
+        ackBtn.style.background = 'rgba(16, 185, 129, 0.35)';
+        ackBtn.style.color = '#10b981';
+        ackBtn.style.borderColor = '#10b981';
+        ackBtn.disabled = true;
+    }
+    showNotification('🛡️ Alert acknowledged by admin.', 'success');
+}
+
+function triggerAdminDeterrent(species) {
+    prepareSoundPopup(species);
+    doPlaySound();
+    showNotification(`🔊 Alarm activated for ${species.toUpperCase()}`, 'warning');
+}
+
+function requestDesktopNotificationPermission() {
+    if (!('Notification' in window)) {
+        showNotification('Desktop notifications are not supported by this browser.', 'warning');
+        return;
+    }
+    if (Notification.permission === 'granted') {
+        showNotification('Desktop alerts are already enabled and active.', 'info');
+        updateDesktopNotifButton(true);
+        return;
+    }
+    Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+            showNotification('✅ Desktop browser alerts enabled for wildlife intrusions!', 'success');
+            updateDesktopNotifButton(true);
+            new Notification('WildAI Alert System', {
+                body: 'Desktop intrusion alerts are now active.',
+                icon: 'logo.jpg'
+            });
+        } else {
+            showNotification('Desktop alert permission was denied. In-dashboard alerts remain active.', 'warning');
+            updateDesktopNotifButton(false);
+        }
+    }).catch(e => {
+        console.warn('Error requesting notification permission:', e);
+    });
+}
+
+function updateDesktopNotifButton(isEnabled) {
+    const btn = document.getElementById('btn-desktop-notif');
+    if (btn) {
+        if (isEnabled) {
+            btn.innerHTML = '🔔 Desktop Alerts: ON';
+            btn.style.color = '#4ade80';
+            btn.style.borderColor = '#4ade80';
+        } else {
+            btn.innerHTML = '🔕 Desktop Alerts: OFF';
+            btn.style.color = '#94a3b8';
+            btn.style.borderColor = '#475569';
+        }
+    }
+}
+
+function sendDesktopBrowserNotification(species, confidence, riskLevel, cameraId) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+        const notif = new Notification(`🚨 ${species.toUpperCase()} DETECTED!`, {
+            body: `Confidence: ${confidence}% | ${riskLevel} RISK\nCamera: ${cameraId}\nImmediate attention required.`,
+            icon: 'logo.jpg',
+            tag: `wildlife-${species.toLowerCase()}`,
+            renotify: true
+        });
+        setTimeout(() => notif.close(), 7000);
+    } catch(e) {
+        console.warn('Desktop notification failed:', e);
+    }
+}
+
+function playAlertChime() {
+    try {
+        const ctx = getAudioContext();
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+    } catch(e) {}
+}
+
+function triggerDetectionAlertPopup(data) {
+    if (!data) return;
+    const smsModal = document.getElementById('smsAlertModal');
+    if (!smsModal) return;
+
+    const now = Date.now();
+    const isModalOpen = !smsModal.classList.contains('hidden') && smsModal.style.display !== 'none';
+
+    if (isModalOpen) {
+        // Continuously update live detection details while modal is open
+        if (data.image) {
+            const img = document.getElementById('smsModalImage');
+            if (img) img.src = data.image;
+        }
+        const behaviorEl = document.getElementById('smsModalBehavior');
+        if (behaviorEl) {
+            const rawBeh = (data.behaviour || data.pose || 'Active movement').replace(/^Observable behavior:\s*/i, '').replace(/_/g, ' ').toUpperCase();
+            behaviorEl.textContent = rawBeh;
+        }
+        const riskEl = document.getElementById('smsModalRiskScore');
+        if (riskEl && data.risk_score) {
+            riskEl.textContent = `${data.risk_score}%`;
+        }
+        return;
+    }
+
+    const cooldownPeriod = 2000;
+    if ((now - lastPopupTime) > cooldownPeriod || lastPopupSpecies !== data.species) {
         lastPopupTime = now;
         lastPopupSpecies = data.species;
         currentDetectionData = data;
@@ -935,128 +1886,134 @@ function addLiveDetectionToFeed(data) {
     }
 }
 
-// ===================================
-// Two-Popup Detection Alert System
-// ===================================
-
 function showDetectionPopups(data) {
-    // Determine species info
-    const speciesLower = data.species.toLowerCase();
-    let dangerLevel = 'medium';
-    let dangerColor = '#ff9900';
-    let badgeText = 'MEDIUM RISK';
+    if (!data) return;
+    const meta = getDetectionClassMeta(data.species);
 
-    if (speciesLower.includes('tiger') || speciesLower.includes('leopard') || speciesLower.includes('poacher')) {
-        dangerLevel = 'high';
-        dangerColor = '#ff4444';
-        badgeText = 'HIGH RISK 🔴';
-    } else if (speciesLower.includes('elephant') || speciesLower.includes('bear')) {
-        dangerLevel = 'medium';
-        dangerColor = '#ff9900';
-        badgeText = 'MEDIUM RISK 🟡';
-    } else {
-        dangerLevel = 'low';
-        dangerColor = '#44bb44';
-        badgeText = 'LOW RISK 🟢';
-    }
+    const spIcon = meta.icon;
+    const spTitle = meta.title;
+    const spSubtitle = meta.category;
+    const displaySpecies = meta.display;
 
-    // ---- NEW: Poacher Detection Filter ----
-    // As per requirement, don't trigger active alerts (SMS/Sound) for poachers.
-    // They will still be visible in the history feed.
-    if (speciesLower === 'poacher') {
-        console.log('[System] Poacher detected: Logging to history only. No active alerts triggered.');
-        return; 
-    }
+    let isHigh = meta.isHigh || (data.risk_score && data.risk_score >= 70);
+    let dangerColor = meta.accentColor || (isHigh ? '#ff4444' : '#ff9900');
+    let badgeText = isHigh ? 'CRITICAL RISK 🔴' : `${meta.dangerLevel.toUpperCase()} RISK 🟡`;
 
     // ---- Show SMS Popup (Popup 1) ----
     const smsModal = document.getElementById('smsAlertModal');
     if (smsModal) {
-        document.getElementById('smsModalImage').src = data.image;
-        document.getElementById('smsModalSpecies').textContent = data.species.toUpperCase();
-        document.getElementById('smsModalConfidence').textContent = `Confidence: ${data.confidence}`;
-        const badge = document.getElementById('smsModalDangerBadge');
-        badge.textContent = badgeText;
-        badge.style.background = dangerColor;
-        smsModal.classList.remove('hidden');
+        if (data.image) {
+            const img = document.getElementById('smsModalImage');
+            if (img) img.src = data.image;
+        }
 
-        if (autoSmsEnabled) {
-            console.log(`[Auto-SMS] Automatically triggering alert for ${data.species}`);
-            showNotification(`📱 Alert Activated`, 'info');
-            doSendSms(); // This function calls /api/send_sms
-            // In auto-mode, we don't show the modal at all
-            smsModal.classList.add('hidden');
-        } else {
-            // Check existing auto_response_mode from backend settings as fallback
-            const mode = currentSystemSettings.auto_response_mode || 'manual';
-            if (mode === 'full' || mode === 'sms-only') {
-                console.log(`[Auto-SMS] Triggering automated alert for ${data.species} (Mode: ${mode})`);
-                showNotification(`📱 Alert Activated`, 'info');
-                doSendSms();
-                smsModal.classList.add('hidden');
+        const iconEl = document.getElementById('smsModalIcon');
+        const titleEl = document.getElementById('smsModalTitle');
+        const subtitleEl = document.getElementById('smsModalSubtitle');
+        if (iconEl) iconEl.textContent = spIcon;
+        if (titleEl) titleEl.textContent = spTitle;
+        if (subtitleEl) subtitleEl.textContent = spSubtitle;
+
+        const speciesEl = document.getElementById('smsModalSpecies');
+        if (speciesEl) speciesEl.textContent = displaySpecies;
+
+        const confEl = document.getElementById('smsModalConfidence');
+        if (confEl) confEl.textContent = `Confidence: ${data.confidence || '95%'}`;
+
+        const badge = document.getElementById('smsModalDangerBadge');
+        if (badge) {
+            badge.textContent = badgeText;
+            badge.style.background = dangerColor;
+        }
+
+        const behaviorEl = document.getElementById('smsModalBehavior');
+        if (behaviorEl) {
+            const rawBeh = (data.behaviour || data.pose || 'Active movement').replace(/^Observable behavior:\s*/i, '').replace(/_/g, ' ').toUpperCase();
+            behaviorEl.textContent = rawBeh;
+        }
+        const riskEl = document.getElementById('smsModalRiskScore');
+        if (riskEl) {
+            riskEl.textContent = `${data.risk_score || meta.riskScore}%`;
+        }
+
+        // CRITICAL: Always bring modal to front and display
+        smsModal.classList.remove('hidden');
+        smsModal.style.setProperty('display', 'flex', 'important');
+        smsModal.style.zIndex = '99999';
+
+        playAlertChime();
+        showNotification(`${spIcon} DETECTED: ${displaySpecies}`, 'error');
+
+        const mode = currentSystemSettings.auto_response_mode || 'manual';
+        const isAutoActive = autoSmsEnabled || mode === 'full' || mode === 'sms-only';
+        const autoBadge = document.getElementById('smsModalAutoBadge');
+        if (autoBadge) {
+            if (isAutoActive) {
+                autoBadge.style.display = 'block';
+                autoBadge.textContent = '⚡ Automated Alert Dispatched • Active Surveillance Mode';
             } else {
-                // Show modal for manual confirmation
-                smsModal.classList.remove('hidden');
+                autoBadge.style.display = 'none';
             }
         }
     }
 
-    // ---- Prepare Sound Popup (Popup 2) - shown after SMS popup is dismissed ----
+    // ---- Prepare Sound Popup (Popup 2) ----
     prepareSoundPopup(data.species);
 
     // Automated Sound Trigger?
     if (autoSoundEnabled) {
         console.log(`[Auto-Sound] Automatically playing deterrent for ${data.species}`);
-        // Delay slightly to allow SMS logic to start
         setTimeout(() => {
             doPlaySound();
             showNotification(`🔊 Alarm Activated`, 'info');
         }, 1000);
-        // Sound modal stays hidden in auto mode
-    } else {
-        // Prepare but don't show yet (it will show after SMS modal dismissal)
     }
 }
 
 function prepareSoundPopup(species) {
-    const speciesLower = species.toLowerCase();
+    const speciesLower = (species || '').toLowerCase();
     let icon = '🐾';
     let soundDesc = 'Loud deterrent sound for 10 seconds';
     
-    if (speciesLower.includes('elephant')) {
+    if (speciesLower.includes('person') || speciesLower.includes('human') || speciesLower.includes('poacher')) {
+        icon = '🚨';
+        soundDesc = '🚨 High-Decibel Security Alarm & Strobe Warning — 10 seconds';
+    } else if (speciesLower.includes('elephant')) {
         icon = '🐘';
         soundDesc = '🐝 Bee/Wasp Swarm Sound — 10 seconds (elephants fear bees)';
-    } else if (speciesLower.includes('tiger')) {
+    } else if (speciesLower.includes('tiger') || speciesLower.includes('cat') || speciesLower.includes('horse') || speciesLower.includes('zebra') || speciesLower.includes('leopard')) {
         icon = '🐅';
-        soundDesc = '🚨 Air Horn / Siren Sound — 10 seconds';
-    } else if (speciesLower.includes('leopard')) {
-        icon = '🐆';
-        soundDesc = '🚨 High-Intensity Siren — 10 seconds';
-    } else if (speciesLower.includes('wild boar') || speciesLower.includes('boar')) {
+        soundDesc = '🚨 High-Intensity Air Horn / Siren — 10 seconds';
+    } else if (speciesLower.includes('wild boar') || speciesLower.includes('boar') || speciesLower.includes('pig')) {
         icon = '🐗';
         soundDesc = '📢 Loud Air Horn — 10 seconds';
     } else if (speciesLower.includes('bear')) {
         icon = '🐻';
         soundDesc = '📢 Air Horn / Siren — 10 seconds';
-    } else if (speciesLower.includes('poacher')) {
-        icon = '🚨';
-        soundDesc = '🚨 Emergency Siren — 10 seconds';
     }
 
-    document.getElementById('soundSpeciesIcon').textContent = icon;
-    document.getElementById('soundSpeciesName').textContent = species.toUpperCase();
-    document.getElementById('soundDescription').textContent = soundDesc;
-    document.getElementById('soundCountdown').textContent = '10s';
-    document.getElementById('soundVisualizer').style.opacity = '0';
-    document.getElementById('btnPlaySound').style.display = '';
-    document.getElementById('btnStopSound').style.display = 'none';
+    const sIcon = document.getElementById('soundSpeciesIcon');
+    if (sIcon) sIcon.textContent = icon;
+    const sName = document.getElementById('soundSpeciesName');
+    if (sName) sName.textContent = species.toUpperCase();
+    const sDesc = document.getElementById('soundDescription');
+    if (sDesc) sDesc.textContent = soundDesc;
+    const sCount = document.getElementById('soundCountdown');
+    if (sCount) sCount.textContent = '10s';
+    const sVis = document.getElementById('soundVisualizer');
+    if (sVis) sVis.style.opacity = '0';
+    const btnPlay = document.getElementById('btnPlaySound');
+    if (btnPlay) btnPlay.style.display = '';
+    const btnStop = document.getElementById('btnStopSound');
+    if (btnStop) btnStop.style.display = 'none';
 }
 
 function dismissSmsModal() {
     const smsModal = document.getElementById('smsAlertModal');
-    if (smsModal) smsModal.classList.add('hidden');
-    // Show the sound popup immediately after
-    const soundModal = document.getElementById('soundAlertModal');
-    if (soundModal) soundModal.classList.remove('hidden');
+    if (smsModal) {
+        smsModal.classList.add('hidden');
+        smsModal.style.setProperty('display', 'none', 'important');
+    }
 }
 
 async function handleSmsApproval() {
@@ -3520,5 +4477,14 @@ async function saveBehaviorConfig() {
         showNotification('Failed to update behavior config', 'error');
     }
 }
+
+// Pre-fill IP Webcam Input Field on Page Load
+document.addEventListener('DOMContentLoaded', () => {
+    const ipInput = document.getElementById('ipWebcamInput');
+    const savedIp = localStorage.getItem('last_ipcam_url');
+    if (ipInput && savedIp) {
+        ipInput.value = savedIp;
+    }
+});
 
 

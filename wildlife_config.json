@@ -1,13 +1,13 @@
 {
   "temporal_persistence_frames": 1,
   "preprocessing": {
-    "enabled": true,
+    "enabled": false,
     "mode": "clahe",
     "clahe_clip_limit": 2.5,
     "clahe_tile_grid_size": [8, 8]
   },
   "adaptive_roi": {
-    "enabled": true,
+    "enabled": false,
     "trigger_conf_min": 0.15,
     "trigger_conf_max": 0.45,
     "padding": 60
@@ -17,25 +17,39 @@
     "WILDLIFE": [
       "tiger", "elephant", "leopard", "bear", "deer", "wild boar", "boar",
       "monkey", "zebra", "giraffe", "cow", "horse", "sheep", "dog", "cat", "bird", "lion", "cheetah"
+    ],
+    "OBJECT": [
+      "cell phone", "bottle", "cup", "backpack", "handbag", "suitcase", "chair", "couch",
+      "laptop", "tv", "knife", "scissors", "car", "motorcycle", "bicycle", "truck"
     ]
   },
   "classes": {
-    "tiger": {"threshold": 0.35, "priority": "critical", "risk_weight": 100},
-    "elephant": {"threshold": 0.35, "priority": "high", "risk_weight": 85},
-    "leopard": {"threshold": 0.35, "priority": "critical", "risk_weight": 95},
-    "bear": {"threshold": 0.35, "priority": "high", "risk_weight": 80},
-    "wild boar": {"threshold": 0.40, "priority": "medium", "risk_weight": 60},
-    "boar": {"threshold": 0.40, "priority": "medium", "risk_weight": 60},
-    "deer": {"threshold": 0.40, "priority": "low", "risk_weight": 20},
-    "monkey": {"threshold": 0.35, "priority": "low", "risk_weight": 30},
-    "person": {"threshold": 0.35, "priority": "critical", "risk_weight": 100},
-    "cow": {"threshold": 0.40, "priority": "low", "risk_weight": 25},
-    "horse": {"threshold": 0.40, "priority": "low", "risk_weight": 30},
-    "sheep": {"threshold": 0.40, "priority": "low", "risk_weight": 15},
-    "dog": {"threshold": 0.40, "priority": "low", "risk_weight": 30},
-    "cat": {"threshold": 0.40, "priority": "low", "risk_weight": 20},
-    "bird": {"threshold": 0.40, "priority": "low", "risk_weight": 10},
-    "zebra": {"threshold": 0.40, "priority": "low", "risk_weight": 35},
-    "giraffe": {"threshold": 0.40, "priority": "low", "risk_weight": 35}
+    "default": {"threshold": 0.25, "priority": "medium", "risk_weight": 40},
+    "tiger": {"threshold": 0.25, "priority": "critical", "risk_weight": 100},
+    "elephant": {"threshold": 0.25, "priority": "high", "risk_weight": 85},
+    "leopard": {"threshold": 0.25, "priority": "critical", "risk_weight": 95},
+    "bear": {"threshold": 0.25, "priority": "high", "risk_weight": 80},
+    "wild boar": {"threshold": 0.25, "priority": "medium", "risk_weight": 60},
+    "wild_boar": {"threshold": 0.25, "priority": "medium", "risk_weight": 60},
+    "boar": {"threshold": 0.25, "priority": "medium", "risk_weight": 60},
+    "deer": {"threshold": 0.25, "priority": "low", "risk_weight": 20},
+    "monkey": {"threshold": 0.25, "priority": "low", "risk_weight": 30},
+    "person": {"threshold": 0.25, "priority": "critical", "risk_weight": 100},
+    "cow": {"threshold": 0.25, "priority": "low", "risk_weight": 25},
+    "horse": {"threshold": 0.25, "priority": "low", "risk_weight": 30},
+    "sheep": {"threshold": 0.25, "priority": "low", "risk_weight": 15},
+    "dog": {"threshold": 0.25, "priority": "low", "risk_weight": 30},
+    "cat": {"threshold": 0.25, "priority": "low", "risk_weight": 20},
+    "bird": {"threshold": 0.25, "priority": "low", "risk_weight": 10},
+    "zebra": {"threshold": 0.25, "priority": "low", "risk_weight": 35},
+    "giraffe": {"threshold": 0.25, "priority": "low", "risk_weight": 35},
+    "cell phone": {"threshold": 0.25, "priority": "medium", "risk_weight": 45},
+    "bottle": {"threshold": 0.25, "priority": "low", "risk_weight": 25},
+    "cup": {"threshold": 0.25, "priority": "low", "risk_weight": 25},
+    "backpack": {"threshold": 0.25, "priority": "medium", "risk_weight": 40},
+    "chair": {"threshold": 0.25, "priority": "low", "risk_weight": 20},
+    "laptop": {"threshold": 0.25, "priority": "medium", "risk_weight": 40},
+    "knife": {"threshold": 0.25, "priority": "critical", "risk_weight": 90},
+    "car": {"threshold": 0.25, "priority": "high", "risk_weight": 70}
   }
 }

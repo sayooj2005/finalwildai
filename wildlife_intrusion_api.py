@@ -8,7 +8,7 @@ import math
 import requests as http_requests
 from fastapi import FastAPI, WebSocket, UploadFile, File, Depends, Form, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import shutil
@@ -110,13 +110,243 @@ os.makedirs("uploads", exist_ok=True)
 os.makedirs(os.path.join("uploads", "evidence"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-# ESP32-CAM Global State
-latest_esp32_frame = None
-frame_ready_event = asyncio.Event()
+# ==============================================================================
+# PIPELINE ARCHITECTURE: Decoupled Camera Ingestion & YOLO Inference Engine
+# ==============================================================================
+
+import threading
+import urllib.request
+import numpy as np
+
+class LiveStreamPipeline:
+    """
+    Central thread-safe, decoupled video pipeline.
+    - Decouples camera frame acquisition from YOLO inference and browser streaming.
+    - Single-frame latest buffer (thread-safe, drops stale frames, zero backlog).
+    - Eliminates redundant JPEG encode/decode cycles.
+    - Caches single JPEG encode for multipart MJPEG streaming (/video_feed).
+    - Asynchronously persists DB events without stalling the live video stream.
+    - Dispatches real-time structured detection events over WebSockets (/ws/client).
+    - Automatic, controlled camera reconnection with exponential backoff.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.mjpeg_cond = threading.Condition()
+        self.raw_frame = None          # np.ndarray
+        self.raw_frame_time = 0.0
+        self.raw_source = "None"
+        
+        self.processed_frame = None    # np.ndarray
+        self.latest_jpeg = None        # bytes (pre-encoded JPEG for /video_feed)
+        self.latest_detections = []    # list of active detection dicts
+        self.latest_behavior_events = []
+        self.latest_escape_route = None
+        self.active_behaviors = []
+        
+        self.camera_status = "disconnected"
+        self.camera_source = 0
+        self.fps = 0.0
+        self.inference_time_ms = 0.0
+        self.total_processed_frames = 0
+        
+        # Camera Capture worker state
+        self.cap_worker_thread = None
+        self.cap_worker_running = False
+        self.cap_obj = None
+
+    def push_raw_frame(self, frame: np.ndarray, source: str = "camera"):
+        """Thread-safe update of the latest raw frame."""
+        if frame is None or not isinstance(frame, np.ndarray) or frame.size == 0:
+            return
+        # Normalize resolution: downscale high-res frames to max 960px width to prevent OpenCV OOM
+        h, w = frame.shape[:2]
+        if w > 960:
+            scale = 960.0 / w
+            frame = cv2.resize(frame, (960, int(h * scale)), interpolation=cv2.INTER_AREA)
+        with self.lock:
+            self.raw_frame = frame
+            self.raw_frame_time = time.time()
+            self.raw_source = source
+            self.camera_status = "connected"
+
+    def get_latest_raw(self):
+        with self.lock:
+            now = time.time()
+            if self.raw_frame is not None and (now - self.raw_frame_time < 3.0):
+                return self.raw_frame, self.raw_frame_time, self.raw_source
+            
+            # Active standby frame generator keeps the stream continuously fluid
+            standby = self._generate_standby_frame()
+            return standby, now, "STANDBY_RADAR"
+
+    def _generate_standby_frame(self):
+        canvas = np.zeros((480, 640, 3), dtype=np.uint8)
+        # Background matrix grid
+        for y in range(0, 480, 40):
+            cv2.line(canvas, (0, y), (640, y), (18, 24, 30), 1)
+        for x in range(0, 640, 40):
+            cv2.line(canvas, (x, 0), (x, 480), (18, 24, 30), 1)
+        # Sweeping radar beam
+        t = time.time()
+        sweep_x = int((math.sin(t * 3.0) * 0.5 + 0.5) * 630) + 5
+        cv2.line(canvas, (sweep_x, 0), (sweep_x, 480), (0, 230, 118), 2)
+        # HUD Information
+        cv2.putText(canvas, "[*] WILDGUARD LIVE SURVEILLANCE FEED", (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (0, 230, 118), 2, cv2.LINE_AA)
+        src_str = str(self.camera_source)
+        if src_str == "0":
+            src_display = "USB / Built-in Webcam (Index 0)"
+        else:
+            src_display = src_str
+        cv2.putText(canvas, f"CAMERA SOURCE: {src_display}", (20, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
+        cv2.putText(canvas, f"STATUS: {self.camera_status.upper()} (ACTIVE POLLING)", (20, 115), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 210, 255), 1, cv2.LINE_AA)
+        cv2.putText(canvas, "Point camera at any person, animal, or object for live popup alerts", (20, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (160, 160, 160), 1, cv2.LINE_AA)
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cv2.putText(canvas, f"SYSTEM TIME: {time_str}", (20, 450), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (140, 140, 140), 1, cv2.LINE_AA)
+        return canvas
+
+    def update_processed(self, processed_frame: np.ndarray, jpeg_bytes: bytes, detections: list, behavior_events: list, escape_route: dict, active_behaviors: list, fps: float, inf_time: float):
+        with self.lock:
+            self.processed_frame = processed_frame
+            self.latest_jpeg = jpeg_bytes
+            self.latest_detections = detections
+            self.latest_behavior_events = behavior_events
+            self.latest_escape_route = escape_route
+            self.active_behaviors = active_behaviors
+            self.fps = fps
+            self.inference_time_ms = inf_time
+            self.total_processed_frames += 1
+        with self.mjpeg_cond:
+            self.mjpeg_cond.notify_all()
+
+    def get_status(self):
+        with self.lock:
+            return {
+                "camera_status": self.camera_status,
+                "camera_source": str(self.camera_source),
+                "fps": round(self.fps, 1),
+                "inference_time_ms": round(self.inference_time_ms, 1),
+                "total_frames": self.total_processed_frames,
+                "active_detections": len(self.latest_detections)
+            }
+
+    def start_camera(self, src):
+        """Starts camera capture worker in a dedicated daemon thread with auto-reconnection."""
+        self.stop_camera()
+        self.camera_source = src
+        self.cap_worker_running = True
+        self.cap_worker_thread = threading.Thread(target=self._camera_capture_worker, args=(src,), daemon=True)
+        self.cap_worker_thread.start()
+
+    def stop_camera(self):
+        self.cap_worker_running = False
+        if self.cap_obj is not None:
+            try:
+                self.cap_obj.release()
+            except Exception:
+                pass
+            self.cap_obj = None
+
+    def _camera_capture_worker(self, src):
+        retry_delay = 1.0
+        while self.cap_worker_running:
+            try:
+                with self.lock:
+                    self.camera_status = "connecting"
+                print(f"[PIPELINE] Connecting camera source: {src}")
+
+                cap = None
+                is_local = (src == 0 or src == "0" or (isinstance(src, str) and src.isdigit()))
+
+                if is_local:
+                    idx = int(src)
+                    if os.name == 'nt':
+                        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+                        if not cap.isOpened():
+                            cap = cv2.VideoCapture(idx, cv2.CAP_MSMF)
+                    else:
+                        cap = cv2.VideoCapture(idx)
+                    
+                    if cap.isOpened():
+                        try:
+                            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                            cap.set(cv2.CAP_PROP_FPS, 30)
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                        except Exception:
+                            pass
+                else:
+                    # IP Camera URL (HTTP / RTSP)
+                    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;udp|timeout;3000000"
+                    cap = cv2.VideoCapture(str(src))
+                    try:
+                        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    except Exception:
+                        pass
+
+                if cap is not None and cap.isOpened():
+                    self.cap_obj = cap
+                    with self.lock:
+                        self.camera_status = "connected"
+                    retry_delay = 1.0
+                    print(f"[PIPELINE] Camera {src} successfully connected.")
+
+                    consecutive_failures = 0
+                    while self.cap_worker_running and cap.isOpened():
+                        ret, frame = cap.read()
+                        if not ret or frame is None or frame.size == 0:
+                            consecutive_failures += 1
+                            if consecutive_failures > 15:
+                                print(f"[PIPELINE] Camera stream dropped {consecutive_failures} frames. Reconnecting...")
+                                break
+                            time.sleep(0.03)
+                            continue
+                        
+                        consecutive_failures = 0
+                        self.push_raw_frame(frame, source=str(src))
+                        time.sleep(0.001)  # Minimal thread yield to maintain fluid 30+ FPS
+                    
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+                    self.cap_obj = None
+
+                else:
+                    # IP Webcam HTTP Snapshot Fallback (Android IP Webcam /shot.jpg)
+                    if isinstance(src, str) and src.startswith("http"):
+                        shot_url = src.replace("/video", "/shot.jpg")
+                        if not shot_url.endswith("/shot.jpg"):
+                            shot_url = shot_url.rstrip("/") + "/shot.jpg"
+                        try:
+                            import urllib.request
+                            req = urllib.request.Request(shot_url, headers={'User-Agent': 'WildAI-Monitor/1.0'})
+                            with urllib.request.urlopen(req, timeout=2.0) as resp:
+                                img_bytes = resp.read()
+                                nparr = np.frombuffer(img_bytes, np.uint8)
+                                frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                                if frame is not None and frame.size > 0:
+                                    with self.lock:
+                                        self.camera_status = "connected"
+                                    self.push_raw_frame(frame, source=str(src))
+                                    time.sleep(0.04)
+                                    continue
+                        except Exception:
+                            pass
+
+                    print(f"[PIPELINE WARNING] Camera {src} failed to open. Retrying in {retry_delay:.1f}s...")
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 1.5, 5.0)
+
+            except Exception as e:
+                print(f"[PIPELINE ERROR] Capture worker error: {e}")
+                time.sleep(1.0)
+
+# Global pipeline instance
+pipeline_manager = LiveStreamPipeline()
 connected_dashboard_clients = []
 cloud_iot_detector = None
 
-# Global Diagnostic State
 global_diagnostics = {
     "total_processed_frames": 0,
     "total_detections": 0,
@@ -124,255 +354,189 @@ global_diagnostics = {
     "detections_by_category": {"HUMAN": 0, "WILDLIFE": 0, "UNKNOWN": 0},
     "average_inference_time_ms": 0.0,
     "current_fps": 0.0,
-    "false_positive_candidates": 0  # Unconfirmed detections
+    "false_positive_candidates": 0
 }
+
+def normalize_cam_url(raw_val: str):
+    raw = str(raw_val).strip()
+    if not raw or raw in ["0", "webcam", "laptop"]:
+        return 0
+    raw = raw.replace(".:", ":").rstrip("/")
+    if not raw.startswith("http://") and not raw.startswith("https://") and not raw.startswith("rtsp://"):
+        raw = "http://" + raw
+    if not raw.endswith("/video") and not raw.endswith("/shot.jpg") and not raw.endswith(".mp4"):
+        raw = raw + "/video"
+    return raw
+
+def background_db_persistence(detections, behavior_events, escape_route, snapshot_frame):
+    """Executes database commits and snapshot saves asynchronously off the streaming loop."""
+    try:
+        db = SessionLocal()
+        cam_lat = float(os.getenv("CAM_LAT", "11.258"))
+        cam_lon = float(os.getenv("CAM_LON", "75.782"))
+        
+        # Persist escape route if needed
+        if escape_route and detections:
+            highest = max(detections, key=lambda d: d.get("risk_score", 0))
+            db.add(models.EvacuationRoute(
+                threat_species=highest.get("animal", "wildlife"),
+                threat_lat=cam_lat,
+                threat_lon=cam_lon,
+                safe_zone_name=escape_route["safe_zone_name"],
+                safe_zone_lat=escape_route["safe_zone_lat"],
+                safe_zone_lon=escape_route["safe_zone_lon"],
+                recommended_heading=escape_route["heading"],
+                distance_meters=escape_route["distance_meters"],
+                risk_level=highest.get("danger_level", "high")
+            ))
+
+        # Persist behavior events & event alerts
+        for ev in behavior_events:
+            b_entry = models.BehaviorEvent(
+                animal=ev.get("animal", "wildlife"),
+                track_id=ev.get("track_id", "T001"),
+                behavior=ev.get("behavior", "standing"),
+                confidence=ev.get("confidence", 0.8),
+                speed=ev.get("speed", 0.0),
+                direction=ev.get("direction", "none"),
+                risk_level=ev.get("risk_level", "LOW"),
+                duration=ev.get("duration", 0.0),
+                camera_id=ev.get("camera_id", os.getenv("CAMERA_ID", "IP_WEBCAM_01")),
+                details=ev.get("event_summary", "")
+            )
+            db.add(b_entry)
+
+            ev_risk = ev.get("risk_level", "LOW").upper()
+            if ev_risk in ["HIGH", "CRITICAL"]:
+                os.makedirs(os.path.join("uploads", "evidence"), exist_ok=True)
+                snapshot_fn = os.path.join("uploads", "evidence", f"alert_{ev['animal']}_{ev['track_id']}_{int(time.time())}.jpg")
+                if snapshot_frame is not None:
+                    cv2.imwrite(snapshot_fn, snapshot_frame)
+                
+                new_event = models.EventAlert(
+                    alert_level="CRITICAL" if ev_risk == "CRITICAL" else "HIGH",
+                    camera_id=os.getenv("CAMERA_ID", "IP_WEBCAM_01"),
+                    location="Sector Zone 1 - Forest Boundary",
+                    species=ev["animal"],
+                    track_id=ev["track_id"],
+                    risk_level=ev_risk.lower(),
+                    confidence=ev.get("confidence", 0.8),
+                    reason=f"Behavioral Indicator: {ev.get('behavior')} ({ev.get('speed', 0)} px/s, {ev.get('direction')})",
+                    snapshot_path=snapshot_fn
+                )
+                db.add(new_event)
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"[ASYNC DB ERROR] {e}")
 
 @app.on_event("startup")
 async def startup_event():
-    global cloud_iot_detector
-    # Initialize YOLO once for the cloud pipeline without local camera
+    global cloud_iot_detector, pipeline_manager
+    # Initialize YOLO once for the cloud pipeline
     cloud_iot_detector = WildlifeIoTSystem(model_path=MODEL_PATH, capture_index=None)
+    
+    # Auto-connect camera if configured
+    initial_cam = os.getenv("CAMERA_SOURCE", None)
+    if initial_cam:
+        pipeline_manager.start_camera(normalize_cam_url(initial_cam))
+    elif os.getenv("AUTO_START_WEBCAM", "0") == "1":
+        pipeline_manager.start_camera(0)
+        
     asyncio.create_task(inference_loop())
-    asyncio.create_task(ipcam_capture_loop())
-
-import urllib.request
-import numpy as np
-
-async def ipcam_capture_loop():
-    global latest_esp32_frame
-    last_connection_state = True
-    while True:
-        try:
-            cam_url = getattr(cloud_iot_detector, 'current_url', None)
-            
-            if cam_url and isinstance(cam_url, str) and cam_url.startswith('http'):
-                # Handle IP Webcam over WiFi via direct snapshot polling
-                shot_url = cam_url.replace('/video', '/shot.jpg')
-                if not shot_url.endswith('/shot.jpg'):
-                    shot_url = shot_url.rstrip('/') + '/shot.jpg'
-                    
-                resp = await run_in_threadpool(urllib.request.urlopen, shot_url, None, 5)
-                img_array = np.array(bytearray(resp.read()), dtype=np.uint8)
-                
-                # Check if it's a valid image
-                if len(img_array) > 0:
-                    latest_esp32_frame = img_array.tobytes()
-                    frame_ready_event.set()
-                    if not last_connection_state:
-                        last_connection_state = True
-                        for client in list(connected_dashboard_clients):
-                            try:
-                                await client.send_json({"type": "camera_status", "status": "connected"})
-                            except:
-                                pass
-                
-                await asyncio.sleep(0.08) # ~12 FPS for smooth feed
-                
-            elif cloud_iot_detector and cloud_iot_detector.cap and cloud_iot_detector.cap.isOpened():
-                # Handle local USB webcams normally
-                ret, frame = cloud_iot_detector.cap.read()
-                if ret:
-                    _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                    latest_esp32_frame = buffer.tobytes()
-                    frame_ready_event.set()
-                    if not last_connection_state:
-                        last_connection_state = True
-                        for client in list(connected_dashboard_clients):
-                            try:
-                                await client.send_json({"type": "camera_status", "status": "connected"})
-                            except:
-                                pass
-                    await asyncio.sleep(0.03)
-                else:
-                    await asyncio.sleep(0.5)
-            else:
-                await asyncio.sleep(0.5)
-        except Exception as e:
-            # Re-try on timeout or connection drop without crashing
-            if last_connection_state:
-                last_connection_state = False
-                for client in list(connected_dashboard_clients):
-                    try:
-                        await client.send_json({"type": "camera_status", "status": "disconnected"})
-                    except:
-                        pass
-            await asyncio.sleep(1.0)
 
 async def inference_loop():
-    global latest_esp32_frame
+    """
+    Continuous YOLO inference loop.
+    - Pulls newest raw frame from single-frame buffer.
+    - Avoids running multiple simultaneous inference processes.
+    - Never builds an unbounded frame queue.
+    - Encodes annotated frame once for multipart MJPEG streaming.
+    - Broadcasts structured detection events to WebSockets.
+    """
+    last_processed_time = 0.0
+    last_persistence_tracker = {}
+    last_escape_persistence = 0.0
+    cam_lat = float(os.getenv("CAM_LAT", "11.258"))
+    cam_lon = float(os.getenv("CAM_LON", "75.782"))
+
+    def estimate_zone(bbox, fw, fh):
+        x1, y1, x2, y2 = bbox
+        cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+        if cx < fw / 2 and cy < fh / 2:
+            return "Zone-A (Top-Left)"
+        elif cx >= fw / 2 and cy < fh / 2:
+            return "Zone-B (Top-Right)"
+        elif cx < fw / 2 and cy >= fh / 2:
+            return "Zone-C (Bottom-Left)"
+        else:
+            return "Zone-D (Bottom-Right)"
+
+    def find_safe_route(threat_lat, threat_lon, safe_havens, detections):
+        best = None
+        best_dist = float('inf')
+        for s in safe_havens:
+            dist = math.sqrt((threat_lat - s["lat"])**2 + (threat_lon - s["lon"])**2)
+            if dist < best_dist:
+                best_dist = dist
+                best = s
+        if not best:
+            return None
+        dlat = best["lat"] - threat_lat
+        dlon = best["lon"] - threat_lon
+        angle = math.degrees(math.atan2(dlon, dlat))
+        if angle < 0:
+            angle += 360
+        directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        heading = directions[int((angle + 22.5) / 45) % 8]
+        dist_m = int(best_dist * 111000)
+        return {
+            "safe_zone_name": best["name"],
+            "safe_zone_lat": best["lat"],
+            "safe_zone_lon": best["lon"],
+            "heading": heading,
+            "distance_meters": dist_m,
+            "contact": best.get("contact", ""),
+            "note": "Recommended route based on currently detected wildlife risk zones."
+        }
+
     while True:
-        await frame_ready_event.wait()
-        
-        # Grab latest frame and clear the event to prevent buffering/lag
-        frame_bytes = latest_esp32_frame
-        latest_esp32_frame = None
-        frame_ready_event.clear()
-        
-        if not frame_bytes:
-            continue
-            
         try:
-            # Decode JPEG
-            nparr = np.frombuffer(frame_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            
-            if frame is None:
+            raw_frame, frame_time, source = pipeline_manager.get_latest_raw()
+            if raw_frame is None or frame_time == last_processed_time:
+                await asyncio.sleep(0.015)
                 continue
 
-            # Run Cloud YOLO Inference
-            processed_frame, metrics = await run_in_threadpool(cloud_iot_detector.process_frame, frame)
+            last_processed_time = frame_time
+            t0 = time.time()
+
+            # Execute YOLO inference in threadpool
+            processed_frame, metrics = await run_in_threadpool(cloud_iot_detector.process_frame, raw_frame)
             detections = metrics.get("threats", [])
-            
-            # Encode Processed Frame
-            _, buffer = cv2.imencode('.jpg', processed_frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            b64_img = base64.b64encode(buffer).decode('utf-8')
-            
-            # Update Diagnostics
-            global_diagnostics["total_processed_frames"] += 1
-            global_diagnostics["current_fps"] = metrics.get("fps", 0.0)
-            global_diagnostics["average_inference_time_ms"] = (global_diagnostics["average_inference_time_ms"] * 0.9) + (metrics.get("inference_time_ms", 0.0) * 0.1)
-            global_diagnostics["total_detections"] += len(detections)
-            global_diagnostics["false_positive_candidates"] += metrics.get("false_positive_candidates", 0)
-            
-            for det in detections:
-                cls_name = det.get("class_name", "unknown")
-                cat = det.get("category", "UNKNOWN")
-                global_diagnostics["detections_by_class"][cls_name] = global_diagnostics["detections_by_class"].get(cls_name, 0) + 1
-                if cat in global_diagnostics["detections_by_category"]:
-                    global_diagnostics["detections_by_category"][cat] += 1
-            
-            # Force Memory Cleanup (Critical for Render 512MB RAM Limit)
-            import gc
-            gc.collect()
-            
-            # ── Part 15: Camera Zone Location ─────────────────────────────────
-            # Each camera is assigned a fixed GPS zone.
-            # Image quadrant → zone label (A-D). No fake GPS conversion.
-            cam_lat = float(os.getenv("CAM_LAT", "11.258"))
-            cam_lon = float(os.getenv("CAM_LON", "75.782"))
-            h_frame, w_frame = frame.shape[:2]
+            behavior_events = metrics.get("behavior_events", [])
 
-            def estimate_zone(bbox, fw, fh):
-                x1, y1, x2, y2 = bbox
-                cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
-                if cx < fw / 2 and cy < fh / 2:
-                    return "Zone-A (Top-Left)"
-                elif cx >= fw / 2 and cy < fh / 2:
-                    return "Zone-B (Top-Right)"
-                elif cx < fw / 2 and cy >= fh / 2:
-                    return "Zone-C (Bottom-Left)"
-                else:
-                    return "Zone-D (Bottom-Right)"
-
-            # ── Part 16: Escape Route Calculator ──────────────────────────────
-            def find_safe_route(threat_lat, threat_lon, safe_havens, detections):
-                """Finds nearest safe haven and returns recommended route.
-                Note: GPS offsets are camera-zone based, not direct bbox conversions."""
-                import math
-                best = None
-                best_dist = float('inf')
-                for s in safe_havens:
-                    dist = math.sqrt((threat_lat - s["lat"])**2 + (threat_lon - s["lon"])**2)
-                    if dist < best_dist:
-                        best_dist = dist
-                        best = s
-                if not best:
-                    return None
-                dlat = best["lat"] - threat_lat
-                dlon = best["lon"] - threat_lon
-                angle = math.degrees(math.atan2(dlon, dlat))
-                if angle < 0:
-                    angle += 360
-                directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-                heading = directions[int((angle + 22.5) / 45) % 8]
-                dist_m = int(best_dist * 111000)  # approx degrees → meters
-                return {
-                    "safe_zone_name": best["name"],
-                    "safe_zone_lat": best["lat"],
-                    "safe_zone_lon": best["lon"],
-                    "heading": heading,
-                    "distance_meters": dist_m,
-                    "contact": best.get("contact", ""),
-                    "note": "Recommended route based on currently detected wildlife risk zones."
-                }
-
-            # Enrich each detection with zone info
+            h_frame, w_frame = raw_frame.shape[:2]
             for det in detections:
                 det["zone"] = estimate_zone(det["bbox"], w_frame, h_frame)
                 det["camera_lat"] = cam_lat
                 det["camera_lon"] = cam_lon
 
-            # Compute escape route only when there is a real high-risk detection
+            # Single JPEG encode for high performance
+            _, buf = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+            jpeg_bytes = buf.tobytes()
+
+            t1 = time.time()
+            inf_ms = (t1 - t0) * 1000.0
+            fps_val = 1000.0 / inf_ms if inf_ms > 0 else 0.0
+
+            # Safe Haven / Escape route
             escape_route = None
             if detections:
                 highest = max(detections, key=lambda d: d.get("risk_score", 0))
                 if highest.get("risk_score", 0) >= 50:
                     escape_route = find_safe_route(cam_lat, cam_lon, SAFE_HAVENS, detections)
-                    # Persist to DB
-                    if escape_route:
-                        db = SessionLocal()
-                        db.add(models.EvacuationRoute(
-                            threat_species=highest["animal"],
-                            threat_lat=cam_lat,
-                            threat_lon=cam_lon,
-                            safe_zone_name=escape_route["safe_zone_name"],
-                            safe_zone_lat=escape_route["safe_zone_lat"],
-                            safe_zone_lon=escape_route["safe_zone_lon"],
-                            recommended_heading=escape_route["heading"],
-                            distance_meters=escape_route["distance_meters"],
-                            risk_level=highest.get("danger_level", "high")
-                        ))
-                        db.commit()
-                        db.close()
-                        print(f"[ROUTE] Animal: {highest['animal']} | Behaviour: {highest.get('behaviour','?')} | -> {escape_route['safe_zone_name']} ({escape_route['heading']}, {escape_route['distance_meters']}m)")
 
-            # ── Behavioral Analysis Persistence & Event Alert Integration ─────
-            behavior_events = metrics.get("behavior_events", [])
-            if behavior_events:
-                db_b = SessionLocal()
-                try:
-                    for ev in behavior_events:
-                        b_entry = models.BehaviorEvent(
-                            animal=ev.get("animal", "wildlife"),
-                            track_id=ev.get("track_id", "T001"),
-                            behavior=ev.get("behavior", "standing"),
-                            confidence=ev.get("confidence", 0.8),
-                            speed=ev.get("speed", 0.0),
-                            direction=ev.get("direction", "none"),
-                            risk_level=ev.get("risk_level", "LOW"),
-                            duration=ev.get("duration", 0.0),
-                            camera_id=ev.get("camera_id", os.getenv("CAMERA_ID", "IP_WEBCAM_01")),
-                            details=ev.get("event_summary", "")
-                        )
-                        db_b.add(b_entry)
-
-                        # Event Alert integration: HIGH or CRITICAL risk behaviors generate an EventAlert
-                        ev_risk = ev.get("risk_level", "LOW").upper()
-                        if ev_risk in ["HIGH", "CRITICAL"]:
-                            snapshot_fn = f"behavior_{ev['animal']}_{ev['track_id']}_{int(time.time())}.jpg"
-                            cv2.imwrite(snapshot_fn, processed_frame)
-                            alert_level_str = "CRITICAL" if ev_risk == "CRITICAL" else "HIGH"
-                            
-                            new_event = models.EventAlert(
-                                alert_level=alert_level_str,
-                                camera_id=os.getenv("CAMERA_ID", "IP_WEBCAM_01"),
-                                location="Sector Zone 1 - Forest Boundary",
-                                species=ev["animal"],
-                                track_id=ev["track_id"],
-                                risk_level=ev_risk.lower(),
-                                confidence=ev.get("confidence", 0.8),
-                                reason=f"Behavioral Indicator: {ev.get('behavior')} ({ev.get('speed', 0)} px/s, {ev.get('direction')})",
-                                snapshot_path=snapshot_fn
-                            )
-                            db_b.add(new_event)
-                    db_b.commit()
-                except Exception as b_err:
-                    print(f"[DB ERROR] Saving behavioral events: {b_err}")
-                    db_b.rollback()
-                finally:
-                    db_b.close()
-
-            # Active behavioral status list
+            # Active behaviors list
             active_behaviors = [
                 {
                     "track_id": d.get("track_id"),
@@ -382,53 +546,125 @@ async def inference_loop():
                     "speed": d.get("speed", d.get("velocity_px_sec", 0.0)),
                     "direction": d.get("movement_direction", d.get("movement_vector", "stationary")),
                     "duration": d.get("duration", 0.0),
-                    "confidence": d.get("behavior_confidence", d.get("confidence", 0.8)),
+                    "confidence": d.get("confidence", 0.8),
                     "loitering": d.get("loitering", False)
                 }
                 for d in detections
             ]
 
-            payload = {
-                "type": "detection",
-                "camera_id": os.getenv("CAMERA_ID", "IP_WEBCAM_01"),
-                "timestamp": datetime.now().isoformat(),
-                "detections": detections,
-                "behavior_events": behavior_events,
-                "active_behaviors": active_behaviors,
-                "diagnostics": {
-                    "fps": metrics.get("fps", 0),
-                    "inference_time_ms": metrics.get("inference_time_ms", 0)
-                },
-                "escape_route": escape_route,
-                "processed_frame": f"data:image/jpeg;base64,{b64_img}",
-                "ai_status": "processing",
-                "camera_status": "connected"
-            }
-            
-            # Broadcast to all connected Web Dashboards
-            dead_clients = []
-            for client in connected_dashboard_clients:
-                try:
-                    await client.send_json(payload)
-                except Exception:
-                    dead_clients.append(client)
-            
-            for client in dead_clients:
-                connected_dashboard_clients.remove(client)
-                
-        except Exception as e:
-            print(f"[Cloud Inference Error] {e}")
-            
-        # No artificial delays - Maximum FPS processing
+            # Update thread-safe buffer
+            pipeline_manager.update_processed(
+                processed_frame, jpeg_bytes, detections, behavior_events, escape_route, active_behaviors, fps_val, inf_ms
+            )
+
+            # Update Diagnostics
+            global_diagnostics["total_processed_frames"] += 1
+            global_diagnostics["current_fps"] = round(fps_val, 1)
+            global_diagnostics["average_inference_time_ms"] = round((global_diagnostics["average_inference_time_ms"] * 0.9) + (inf_ms * 0.1), 1)
+            global_diagnostics["total_detections"] += len(detections)
+
+            # Non-blocking asynchronous DB persistence with 10s cooldown per track
+            now_ts = time.time()
+            eligible_events = []
+            for ev in behavior_events:
+                t_key = f"{ev.get('animal')}_{ev.get('track_id')}"
+                if now_ts - last_persistence_tracker.get(t_key, 0) > 10.0:
+                    last_persistence_tracker[t_key] = now_ts
+                    eligible_events.append(ev)
+
+            if eligible_events or (escape_route and highest.get("risk_score", 0) >= 70 and (now_ts - last_escape_persistence > 15.0)):
+                last_escape_persistence = now_ts
+                h_p, w_p = processed_frame.shape[:2]
+                snap_w = min(640, w_p)
+                snap_h = int(h_p * (snap_w / w_p))
+                snap_thumb = cv2.resize(processed_frame, (snap_w, snap_h))
+                asyncio.get_event_loop().run_in_executor(
+                    None, background_db_persistence, detections, eligible_events, escape_route, snap_thumb
+                )
+
+            # Broadcast WebSocket payload
+            if connected_dashboard_clients:
+                b64_img = base64.b64encode(jpeg_bytes).decode('utf-8')
+                ws_payload = {
+                    "type": "detection",
+                    "camera_id": os.getenv("CAMERA_ID", "IP_WEBCAM_01"),
+                    "timestamp": datetime.now().isoformat(),
+                    "detections": detections,
+                    "behavior_events": behavior_events,
+                    "active_behaviors": active_behaviors,
+                    "diagnostics": {
+                        "fps": round(fps_val, 1),
+                        "inference_time_ms": round(inf_ms, 1)
+                    },
+                    "escape_route": escape_route,
+                    "processed_frame": f"data:image/jpeg;base64,{b64_img}",
+                    "ai_status": "processing",
+                    "camera_status": pipeline_manager.camera_status
+                }
+
+                dead = []
+                for ws in list(connected_dashboard_clients):
+                    try:
+                        await ws.send_json(ws_payload)
+                    except Exception:
+                        dead.append(ws)
+                for d in dead:
+                    if d in connected_dashboard_clients:
+                        connected_dashboard_clients.remove(d)
+
+            await asyncio.sleep(0.005)
+        except Exception as ex:
+            print(f"[INFERENCE ERROR] {ex}")
+            await asyncio.sleep(0.05)
+
+async def generate_mjpeg_stream():
+    """Asynchronous multipart/x-mixed-replace stream yielding strictly new frames without threadpool bottlenecks."""
+    last_sent_id = -1
+    while True:
+        # Check if a newly processed JPEG frame is available
+        if pipeline_manager.total_processed_frames != last_sent_id and pipeline_manager.latest_jpeg is not None:
+            frame_bytes = pipeline_manager.latest_jpeg
+            last_sent_id = pipeline_manager.total_processed_frames
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + frame_bytes + b"\r\n"
+            )
+            await asyncio.sleep(0.005)
+        else:
+            await asyncio.sleep(0.02)
+
+@app.get("/video_feed")
+async def video_feed():
+    """High-speed native MJPEG streaming endpoint for fluid, shutter-free live camera playback."""
+    return StreamingResponse(
+        generate_mjpeg_stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive"
+        }
+    )
+
+@app.get("/api/camera/status")
+async def get_camera_status():
+    """Returns real-time camera connection status, live FPS, and telemetry."""
+    return pipeline_manager.get_status()
 
 @app.post("/api/esp32/frame")
 async def receive_esp32_frame(request: Request):
     """ESP32-CAM sends raw JPEG bytes to this Cloud endpoint."""
-    global latest_esp32_frame
     body = await request.body()
     if body:
-        latest_esp32_frame = body
-        frame_ready_event.set()
+        try:
+            nparr = np.frombuffer(body, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is not None and frame.size > 0:
+                pipeline_manager.push_raw_frame(frame, source=os.getenv("CAMERA_ID", "ESP32_CAM_01"))
+        except Exception as e:
+            return {"status": "error", "message": f"Malformed frame: {e}"}
     return {"status": "ok", "message": "Frame received."}
 
 @app.websocket("/ws/client")
@@ -437,12 +673,24 @@ async def websocket_client(websocket: WebSocket):
     await websocket.accept()
     connected_dashboard_clients.append(websocket)
     try:
-        await websocket.send_json({"type": "camera_status", "status": "connected"})
+        await websocket.send_json({"type": "camera_status", "status": pipeline_manager.camera_status})
         while True:
             # Keep alive
             await websocket.receive_text()
     except Exception:
-        connected_dashboard_clients.remove(websocket)
+        if websocket in connected_dashboard_clients:
+            connected_dashboard_clients.remove(websocket)
+
+@app.post("/api/settings/camera")
+async def set_camera_settings(request: Request):
+    try:
+        data = await request.json()
+        raw_input = str(data.get("url", "0")).strip()
+        cam_source = normalize_cam_url(raw_input)
+        pipeline_manager.start_camera(cam_source)
+        return {"status": "ok", "message": f"Connecting camera: {cam_source}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.post("/api/upload_video")
 async def upload_video(file: UploadFile = File(...)):
@@ -2398,6 +2646,11 @@ async def status_page():
 async def root_index():
     return FileResponse("index.html")
 
+@app.get("/live", response_class=HTMLResponse)
+async def live_page():
+    with open("live.html", "r", encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
+
 @app.get("/{filename}")
 async def secure_static_server(filename: str):
     if ".." in filename or "/" in filename or "\\" in filename:
@@ -2409,15 +2662,26 @@ async def secure_static_server(filename: str):
         raise HTTPException(status_code=403, detail="File type forbidden")
     if os.path.exists(filename):
         return FileResponse(filename)
+    alt1 = filename.replace("_", "-")
+    if os.path.exists(alt1):
+        return FileResponse(alt1)
+    alt2 = filename.replace("-", "_")
+    if os.path.exists(alt2):
+        return FileResponse(alt2)
     from fastapi import HTTPException
     raise HTTPException(status_code=404, detail="File not found")
 
-@app.get("/live", response_class=HTMLResponse)
-async def live_page():
-    with open("live.html", "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8083)
+    import asyncio
+
+    async def run_dual_servers():
+        config_8000 = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+        config_8083 = uvicorn.Config(app, host="0.0.0.0", port=8083, log_level="info")
+        server_8000 = uvicorn.Server(config_8000)
+        server_8083 = uvicorn.Server(config_8083)
+        await asyncio.gather(server_8000.serve(), server_8083.serve())
+
+    asyncio.run(run_dual_servers())
+
 

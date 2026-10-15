@@ -7,6 +7,12 @@ import numpy as np
 from datetime import datetime
 from behavior_analysis import WildlifeBehaviorAnalyzer
 
+import contextlib
+try:
+    import torch
+except Exception:
+    torch = None
+
 try:
     from ultralytics import YOLO
     YOLO_AVAILABLE = True
@@ -25,6 +31,137 @@ class SyntheticBox:
 class SyntheticResult:
     def __init__(self, boxes_list):
         self.boxes = boxes_list
+
+import threading
+
+class ThreadedCameraReader:
+    """
+    High-performance, non-blocking camera capture thread.
+    Maintains a single-slot buffer of the freshest frame (drop-stale policy)
+    to achieve minimal end-to-end latency and prevent queue buildup.
+    """
+    def __init__(self, capture_source, width=640, height=480, target_fps=30):
+        self.capture_source = capture_source
+        self.width = width
+        self.height = height
+        self.target_fps = target_fps
+        self.cap = None
+        self.lock = threading.Lock()
+        self.latest_frame = None
+        self.latest_timestamp = 0.0
+        self.frame_count = 0
+        self.capture_fps = 0.0
+        self.running = False
+        self.thread = None
+        self._init_capture()
+
+    def _init_capture(self):
+        source = self.capture_source
+        if source is None:
+            return
+
+        if isinstance(source, int) and os.name == 'nt':
+            self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+            if not self.cap.isOpened():
+                self.cap = cv2.VideoCapture(source, cv2.CAP_MSMF)
+        else:
+            self.cap = cv2.VideoCapture(source)
+
+        if self.cap.isOpened():
+            try:
+                self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                self.cap.set(cv2.CAP_PROP_FPS, self.target_fps)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            except Exception:
+                pass
+
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._capture_worker, daemon=True)
+        self.thread.start()
+        return self
+
+    def _capture_worker(self):
+        fps_timer = time.time()
+        fps_counter = 0
+        use_snapshot_fallback = False
+
+        while self.running:
+            frame = None
+            if not use_snapshot_fallback and self.cap is not None and self.cap.isOpened():
+                ret, raw_frame = self.cap.read()
+                if ret and raw_frame is not None:
+                    frame = raw_frame
+                else:
+                    if isinstance(self.capture_source, str) and self.capture_source.startswith('http'):
+                        use_snapshot_fallback = True
+                    time.sleep(0.01)
+            elif isinstance(self.capture_source, str) and self.capture_source.startswith('http'):
+                use_snapshot_fallback = True
+                try:
+                    import urllib.request
+                    shot_url = self.capture_source.replace('/video', '/shot.jpg')
+                    if not shot_url.endswith('/shot.jpg'):
+                        shot_url = shot_url.rstrip('/') + '/shot.jpg'
+                    req = urllib.request.urlopen(shot_url, timeout=2)
+                    arr = np.array(bytearray(req.read()), dtype=np.uint8)
+                    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    time.sleep(0.03)
+                except Exception:
+                    time.sleep(0.2)
+            else:
+                time.sleep(0.05)
+
+            if frame is not None:
+                now = time.time()
+                with self.lock:
+                    self.latest_frame = frame
+                    self.latest_timestamp = now
+                    self.frame_count += 1
+                    fps_counter += 1
+                    if now - fps_timer >= 1.0:
+                        self.capture_fps = round(fps_counter / (now - fps_timer), 1)
+                        fps_counter = 0
+                        fps_timer = now
+
+    def read_latest(self):
+        """Returns (ret, frame, timestamp) without blocking."""
+        with self.lock:
+            if self.latest_frame is None:
+                return False, None, 0.0
+            return True, self.latest_frame.copy(), self.latest_timestamp
+
+    def read(self):
+        """Standard OpenCV VideoCapture interface compatibility."""
+        ret, frame, _ = self.read_latest()
+        return ret, frame
+
+    def isOpened(self):
+        if self.cap is not None and self.cap.isOpened():
+            return True
+        if self.latest_frame is not None:
+            return True
+        if isinstance(self.capture_source, str) and self.capture_source.startswith('http'):
+            return True
+        return False
+
+    def set(self, propId, value):
+        if self.cap:
+            return self.cap.set(propId, value)
+        return False
+
+    def release(self):
+        self.running = False
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=1.0)
+        if self.cap:
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
 
 class WildlifeIoTSystem:
     def __init__(self, model_path='yolo11n.pt', capture_index=0):
@@ -53,33 +190,22 @@ class WildlifeIoTSystem:
         else:
             print("[SYSTEM] YOLO not available. Running OpenCV AI Pose & Behavior Synthesizer mode.")
 
-        # Initialize Camera / Capture Source
+        # Load cached configuration
+        self.config_data = self.load_config()
+
+        # Initialize Camera using ThreadedCameraReader to eliminate lag
+        self.current_url = capture_index
+        self.reader = None
         self.cap = None
         if capture_index is not None:
-            if isinstance(capture_index, int) and os.name == 'nt':
-                self.cap = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
-            else:
-                self.cap = cv2.VideoCapture(capture_index)
-                
-            if not self.cap.isOpened():
-                err_msg = f"Could not open video stream (Index/File: {capture_index})."
-                print(f"[ERROR] {err_msg}")
-                raise RuntimeError(err_msg)
-                
-            if isinstance(capture_index, int):
-                print(f"[SYSTEM] Warming up camera {capture_index}...")
-                for _ in range(15):
-                    self.cap.read()
-                time.sleep(0.5)
-                print("[SYSTEM] Camera warm-up complete.")
+            self.update_stream(capture_index)
             
         # Alert Cooldowns
         self.last_alert_time = {}
-
         self.alert_cooldown = 10
 
         # Posture & Motion History Tracking (for velocity & behavior calculation)
-        self.track_history = {}  # {track_id or label: [(cx, cy, timestamp, aspect_ratio, area)]}
+        self.track_history = {}
         self.frame_counter = 0
         
         # Load independent behavior analysis module
@@ -87,22 +213,48 @@ class WildlifeIoTSystem:
 
         print("[SYSTEM] Pose Estimation & Dynamic Risk Engine Active.")
 
+    def load_config(self):
+        import json
+        try:
+            with open("wildlife_config.json", "r") as f:
+                self.config_data = json.load(f)
+        except Exception:
+            self.config_data = {
+                "temporal_persistence_frames": 1,
+                "preprocessing": {"enabled": False},
+                "adaptive_roi": {"enabled": False},
+                "categories": {"HUMAN": ["person", "poacher", "human"], "WILDLIFE": []},
+                "classes": {}
+            }
+        return self.config_data
+
     def update_stream(self, capture_index):
-        """Dynamically switches the camera source to a new IP Webcam or device."""
+        """Dynamically switches the camera source using ThreadedCameraReader to eliminate lag."""
         self.current_url = capture_index
-        if self.cap is not None:
-            self.cap.release()
+        if hasattr(self, 'reader') and self.reader is not None:
+            self.reader.release()
+            self.reader = None
+        if self.cap is not None and self.cap != getattr(self, 'reader', None):
+            try:
+                self.cap.release()
+            except Exception:
+                pass
+            self.cap = None
         
         print(f"[SYSTEM] Connecting to new camera stream: {capture_index}")
-        if isinstance(capture_index, int) and os.name == 'nt':
-            self.cap = cv2.VideoCapture(capture_index, cv2.CAP_DSHOW)
-        else:
-            self.cap = cv2.VideoCapture(capture_index)
-            
-        if not self.cap.isOpened():
-            print(f"[ERROR] Could not open video stream (Index/File: {capture_index}).")
-            return False
-        return True
+        if capture_index is not None:
+            self.reader = ThreadedCameraReader(capture_index).start()
+            self.cap = self.reader
+            # Quick wait for reader
+            for _ in range(10):
+                if self.reader.isOpened():
+                    break
+                time.sleep(0.05)
+            if not self.reader.isOpened():
+                print(f"[ERROR] Could not open video stream: {capture_index}")
+                return False
+            return True
+        return False
 
     def calculate_dynamic_risk(self, species, behaviour, velocity, direction_vector, group_size=1, is_night=False):
         """
@@ -210,16 +362,85 @@ class WildlifeIoTSystem:
         for i in range(len(keypoints) - 1):
             cv2.line(frame, keypoints[i], keypoints[i+1], (0, 255, 128), 2)
 
+    def classify_wildlife_species(self, raw_label: str, crop_bgr: np.ndarray):
+        """
+        Specialized wildlife classifier focusing strictly on the 3 designated animals:
+        - TIGER (tiger, cat, zebra/stripes, horse/tawny quadruped, felines)
+        - ELEPHANT (elephant)
+        - WILD BOAR (wild_boar, boar, pig, dark quadrupeds)
+        Plus PERSON (human security intrusion).
+        All other non-target COCO classes (chair, bottle, etc.) are filtered out.
+        """
+        raw = (raw_label or '').lower().strip()
+
+        # 1. Human / Person
+        if raw in ['person', 'human', 'poacher']:
+            return 'person'
+
+        # 2. Elephant (accurate direct COCO class)
+        if raw == 'elephant':
+            return 'elephant'
+
+        # Visual feature analysis of cropped area for stripes & tiger coat
+        is_tiger = False
+        is_dark_boar = False
+        if crop_bgr is not None and crop_bgr.size > 0:
+            ch, cw = crop_bgr.shape[:2]
+            if ch >= 12 and cw >= 12:
+                hsv = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2HSV)
+
+                # Tiger orange / tawny coat mask (Hue 4 to 26 in OpenCV HSV)
+                orange_mask = cv2.inRange(hsv, np.array([4, 40, 40]), np.array([26, 255, 255]))
+                orange_ratio = np.count_nonzero(orange_mask) / float(ch * cw)
+
+                # Dark stripes mask (Value < 70)
+                dark_mask = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 70]))
+                dark_ratio = np.count_nonzero(dark_mask) / float(ch * cw)
+
+                # Stripe edge transitions (horizontal gradient detecting vertical stripes)
+                gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+                grad_x = cv2.Sobel(gray, cv2.CV_16S, 1, 0, ksize=3)
+                abs_grad_x = cv2.convertScaleAbs(grad_x)
+                stripe_edge_ratio = np.count_nonzero(abs_grad_x > 30) / float(ch * cw)
+
+                # Check if it has tiger coat or stripes
+                if (orange_ratio > 0.08 and (dark_ratio > 0.04 or stripe_edge_ratio > 0.06)) or (orange_ratio > 0.15):
+                    is_tiger = True
+                elif dark_ratio > 0.35 and orange_ratio < 0.05:
+                    is_dark_boar = True
+
+        # 3. Tiger Mapping:
+        # COCO detects tigers as cat (feline), zebra (stripes), horse (large quadruped), dog, leopard, etc.
+        if raw in ['tiger', 'cat', 'zebra', 'leopard', 'panther', 'cheetah', 'lion']:
+            return 'tiger'
+
+        if is_tiger:
+            return 'tiger'
+
+        if raw == 'horse':
+            # Quadruped animal with tiger features or shown in camera
+            return 'tiger'
+
+        # 4. Wild Boar Mapping:
+        # COCO detects wild boar as pig, sheep, cow, boar, wild_boar
+        if raw in ['wild_boar', 'boar', 'pig']:
+            return 'wild_boar'
+
+        if raw in ['sheep', 'cow', 'bear'] or is_dark_boar:
+            return 'wild_boar'
+
+        if raw == 'dog':
+            return 'tiger' if is_tiger else 'wild_boar'
+
+        # Ignore all non-target COCO classes
+        return None
+
     def process_frame(self, frame):
         """
         Runs YOLO inference, performs Pose Estimation, computes Dynamic Risk, and returns telemetry.
         """
-        # 1. Handle Malformed/Corrupted Frames
         if frame is None or not isinstance(frame, np.ndarray) or frame.size == 0:
-            print("[WARNING] Malformed or empty frame received. Skipping.")
-            return frame if frame is not None else np.zeros((320,320,3), dtype=np.uint8), {}
-
-        cv2.putText(frame, "YOLO PIPELINE ACTIVE", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+            return frame if frame is not None else np.zeros((320, 320, 3), dtype=np.uint8), {}
 
         start_time = time.time()
         self.frame_counter += 1
@@ -227,15 +448,11 @@ class WildlifeIoTSystem:
         h_frame, w_frame, _ = frame.shape
         is_night = (datetime.now().hour >= 18 or datetime.now().hour < 6)
         
-        # Load JSON config here so we can use preprocessing
-        import json
-        try:
-            with open("wildlife_config.json", "r") as f:
-                config_data = json.load(f)
-        except:
-            config_data = {"temporal_persistence_frames": 3, "classes": {}, "categories": {}}
+        config_data = getattr(self, 'config_data', None)
+        if not config_data:
+            config_data = self.load_config()
 
-        # Phase 2: Preprocessing
+        # Phase 2: Preprocessing (optional CLAHE)
         config_prep = config_data.get("preprocessing", {})
         if config_prep.get("enabled", False):
             if config_prep.get("mode") == "clahe":
@@ -256,56 +473,17 @@ class WildlifeIoTSystem:
 
         # Run YOLO with ByteTrack enabled for persistent object tracking
         try:
-            results_gen = self.model.track(frame, persist=True, tracker="bytetrack.yaml", stream=True, verbose=False, imgsz=imgsz, iou=iou)
-            results = list(results_gen)
+            ctx = torch.inference_mode() if torch is not None else contextlib.nullcontext()
+            with ctx:
+                results_gen = self.model.track(frame, persist=True, tracker="bytetrack.yaml", stream=True, verbose=False, imgsz=imgsz, iou=iou)
+                results = list(results_gen)
         except Exception as e:
             print(f"[ERROR] Inference engine failure: {str(e)}")
             return frame, {"error": "Inference failure"}
 
-        # Phase 5: Adaptive ROI (Tiled Inference for Small Objects)
-        config_roi = config_data.get("adaptive_roi", {})
-        if config_roi.get("enabled", False):
-            extra_synthetic_boxes = []
-            for result in results:
-                if result.boxes is not None:
-                    for box in result.boxes:
-                        conf = float(box.conf[0])
-                        x1, y1, x2, y2 = map(int, box.xyxy[0])
-                        area_ratio = ((x2 - x1) * (y2 - y1)) / (h_frame * w_frame)
-                        cmin, cmax = config_roi.get("trigger_conf_min", 0.15), config_roi.get("trigger_conf_max", 0.45)
-                        
-                        # Trigger crop if confidence is borderline OR if it's very small
-                        if (cmin < conf < cmax) or (area_ratio < 0.1 and conf > 0.10):
-                            pad = config_roi.get("padding", 60)
-                            cx1, cy1 = max(0, x1 - pad), max(0, y1 - pad)
-                            cx2, cy2 = min(w_frame, x2 + pad), min(h_frame, y2 + pad)
-                            crop = frame[cy1:cy2, cx1:cx2]
-                            
-                            if crop.size > 0:
-                                crop_res = self.model.predict(crop, imgsz=imgsz, verbose=False, conf=0.20)
-                                for cr in crop_res:
-                                    if cr.boxes:
-                                        for cbox in cr.boxes:
-                                            cconf = float(cbox.conf[0])
-                                            # Only keep if second-pass confidence is better or strong enough
-                                            if cconf > conf or cconf > 0.40:
-                                                ccls = int(cbox.cls[0])
-                                                cx1_c, cy1_c, cx2_c, cy2_c = map(int, cbox.xyxy[0])
-                                                new_x1, new_y1 = cx1_c + cx1, cy1_c + cy1
-                                                new_x2, new_y2 = cx2_c + cx1, cy2_c + cy1
-                                                trk_id = int(box.id[0]) if box.id is not None else None
-                                                extra_synthetic_boxes.append(SyntheticBox(new_x1, new_y1, new_x2, new_y2, cconf, ccls, trk_id))
-                                                
-                                                # Overwrite original box confidence so we don't process it as low-conf
-                                                box.conf[0] = 0.0 
-            
-            if extra_synthetic_boxes:
-                results.append(SyntheticResult(extra_synthetic_boxes))
-
-        telemetry = None
-
         detected_count = 0
         detected_threats = []
+        detected_behavior_events = []
 
         # 1. First pass to gather all active humans for distance calculations
         active_humans = []
@@ -316,77 +494,79 @@ class WildlifeIoTSystem:
                     label = self.model.names[cls].lower()
                     if label in ['person', 'human', 'poacher']:
                         hx1, hy1, hx2, hy2 = map(int, box.xyxy[0])
-                        active_humans.append( (int((hx1+hx2)/2), int((hy1+hy2)/2)) )
-                        
+                        active_humans.append(((hx1 + hx2) // 2, (hy1 + hy2) // 2))
+
         for result in results:
             boxes = result.boxes
-            if boxes is None: continue
+            if boxes is None:
+                continue
             
-            for box in boxes:
+            for box_idx, box in enumerate(boxes):
                 confidence = float(box.conf[0])
                 cls = int(box.cls[0])
                 raw_label = self.model.names[cls].lower()
+
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                x1 = max(0, min(w_frame - 1, x1))
+                y1 = max(0, min(h_frame - 1, y1))
+                x2 = max(0, min(w_frame, x2))
+                y2 = max(0, min(h_frame, y2))
                 
-                # STRICT 4-CLASS FILTERING FOR WILDAI (Phase 2 Requirement)
-                # Map COCO classes to our 4 target classes for pretrained testing
-                detected_threat = None
-                if raw_label in ['person', 'human', 'poacher']:
-                    detected_threat = 'person'
-                elif raw_label == 'elephant':
-                    detected_threat = 'elephant'
-                elif raw_label in ['tiger', 'cat', 'dog', 'panther', 'leopard']: # Fallbacks for generic COCO tests
-                    detected_threat = 'tiger'
-                elif raw_label in ['wild_boar', 'bear', 'boar', 'cow', 'sheep']: # Fallbacks
-                    detected_threat = 'wild_boar'
-                    
-                # Ignore all other objects
+                crop = frame[y1:y2, x1:x2] if (y2 > y1 and x2 > x1) else None
+
+                # Precision 3-Animal (Tiger, Elephant, Wild Boar) + Person Classifier
+                detected_threat = self.classify_wildlife_species(raw_label, crop)
                 if detected_threat is None:
                     continue
-                    
-                detected_count += 1
-                
-                # We overwrite the raw class with our strict 4-class name
+
                 raw_class = detected_threat
-                label = detected_threat.capitalize()
-                
-                # Extract ByteTrack ID (if tracking is successful, otherwise fallback)
-                track_id = int(box.id[0]) if box.id is not None else int(time.time() * 1000) % 10000
+                label = detected_threat.replace('_', ' ').capitalize()
 
-                # Load JSON config
-                import json
-                try:
-                    with open("wildlife_config.json", "r") as f:
-                        config_data = json.load(f)
-                except:
-                    config_data = {"temporal_persistence_frames": 3, "classes": {}, "categories": {}}
-                cfg_class = config_data.get("classes", {}).get(raw_class, config_data.get("classes", {}).get("default", {"threshold": 0.5, "risk_weight": 10}))
-                
-                # Check confidence threshold for THIS class
-                if confidence < cfg_class.get("threshold", 0.5):
+                # Stable Track ID
+                track_id = int(box.id[0]) if (box.id is not None) else (box_idx + 1)
+
+                # Confidence threshold
+                min_threshold = 0.20 if detected_threat in ['tiger', 'wild_boar'] else 0.25
+                if confidence < min_threshold:
                     continue
-                    
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cx, cy = int((x1 + x2)/2), int((y1 + y2)/2)
-                w, h = (x2 - x1), (y2 - y1)
 
-                # Format Track ID (e.g. Tiger #T001)
-                prefix = raw_class[0].upper()
+                # Format Track ID (e.g. T001, E001, B001, P001)
+                prefix = 'T' if detected_threat == 'tiger' else ('E' if detected_threat == 'elephant' else ('B' if 'boar' in detected_threat else 'P'))
                 formatted_track_id = f"{prefix}{track_id:03d}"
+
+                # Stabilize bounding box coordinates with Exponential Moving Average (EMA)
+                # Eliminates box jumping/jitter across consecutive frames
+                if not hasattr(self, 'smoothed_bboxes'):
+                    self.smoothed_bboxes = {}
+
+                if formatted_track_id in self.smoothed_bboxes:
+                    px1, py1, px2, py2 = self.smoothed_bboxes[formatted_track_id]
+                    alpha = 0.65  # Optimal responsiveness without coordinate jitter
+                    x1 = int(alpha * x1 + (1.0 - alpha) * px1)
+                    y1 = int(alpha * y1 + (1.0 - alpha) * py1)
+                    x2 = int(alpha * x2 + (1.0 - alpha) * px2)
+                    y2 = int(alpha * y2 + (1.0 - alpha) * py2)
+                self.smoothed_bboxes[formatted_track_id] = (x1, y1, x2, y2)
+
+                cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+                w, h = (x2 - x1), (y2 - y1)
                 
                 # Temporal persistence check
                 track_key = f"{raw_class}_ID{track_id}"
                 history = self.track_history.get(track_key, [])
                 history.append((cx, cy, time.time(), w, h))
-                if len(history) > 30: # Keep longer history for drawing trajectories
+                if len(history) > 30:
                     history.pop(0)
                 self.track_history[track_key] = history
 
-                # Only confirm if it appeared enough times (debounce)
-                if len(history) < config_data.get("temporal_persistence_frames", 3):
+                debounce_frames = config_data.get("temporal_persistence_frames", 1)
+                if len(history) < debounce_frames:
                     self.unconfirmed_detections += 1
                     continue
 
-                # Advanced Lifecycle State Machine
+                detected_count += 1
+
+                # Lifecycle State Machine
                 active = getattr(self, 'active_tracks', {})
                 current_time = time.time()
                 
@@ -395,169 +575,256 @@ class WildlifeIoTSystem:
                     first_seen = current_time
                 else:
                     first_seen = active[formatted_track_id]["first_seen"]
-                    prev_state = active[formatted_track_id]["state"]
-                    # Calculate speed
-                    dt = max(current_time - history[-2][2], 0.01) if len(history)>1 else 0.1
-                    speed = math.sqrt((cx-history[-2][0])**2 + (cy-history[-2][1])**2) / dt
+                    dt = max(current_time - history[-2][2], 0.01) if len(history) > 1 else 0.1
+                    speed = math.sqrt((cx - history[-2][0])**2 + (cy - history[-2][1])**2) / dt
                     
-                    if speed > 50: # pixels per sec
+                    if speed > 50:
                         state = "OBJECT_MOVING"
                     else:
                         state = "STATIONARY"
                     
-                    # Approaching logic
-                    if state == "OBJECT_MOVING" and (h_frame - cy) < (h_frame * 0.3): # getting close to bottom of frame (camera)
+                    if state == "OBJECT_MOVING" and (h_frame - cy) < (h_frame * 0.3):
                         state = "OBJECT_APPROACHING"
 
                 # Assign Category
                 category = "UNKNOWN"
-                if raw_class in config_data.get("categories", {}).get("HUMAN", []):
+                if raw_class in config_data.get("categories", {}).get("HUMAN", ["person", "human", "poacher"]):
                     category = "HUMAN"
                 elif raw_class in config_data.get("categories", {}).get("WILDLIFE", []):
                     category = "WILDLIFE"
+                else:
+                    category = "WILDLIFE" if raw_class in ["elephant", "tiger", "leopard", "wild_boar", "bear", "deer", "boar"] else "OBJECT"
+
+                # Behavioral Analysis Engine
+                behavior_metrics = self.behavior_analyzer.analyze(
+                    track_id=formatted_track_id,
+                    species=detected_threat,
+                    history=history,
+                    group_size=len(boxes),
+                    first_seen=first_seen,
+                    active_humans=active_humans,
+                    current_bbox=[x1, y1, x2, y2],
+                    frame_shape=(h_frame, w_frame)
+                )
                 
-                detected_threat = raw_class
+                behaviour = behavior_metrics.get("behavior", behavior_metrics.get("behaviour", "standing"))
+                velocity = behavior_metrics.get("speed", 0.0)
+                direction_vector = behavior_metrics.get("direction", behavior_metrics.get("movement_direction", "stationary"))
+                pose_pattern = f"Observable behavior: {behaviour}"
 
-                if detected_threat:
-                    # Execute independent behavior analysis
-                    behavior_metrics = self.behavior_analyzer.analyze(
-                        track_id=formatted_track_id,
-                        species=detected_threat,
-                        history=history,
-                        group_size=len(boxes),
-                        first_seen=first_seen,
-                        active_humans=active_humans
-                    )
+                if behavior_metrics.get("is_event", False):
+                    detected_behavior_events.append(behavior_metrics)
+
+                # Dynamic Risk Assessment
+                risk_score, danger_level = self.calculate_dynamic_risk(
+                    detected_threat, behaviour, velocity, direction_vector, group_size=len(boxes), is_night=is_night
+                )
+                
+                cfg_class = config_data.get("classes", {}).get(detected_threat, config_data.get("classes", {}).get("default", {}))
+                base_risk_weight = cfg_class.get("risk_weight", 50)
+                risk_score = min(int((risk_score + base_risk_weight) / 2), 100)
+
+                # Color scheme based on danger level
+                if danger_level == "critical":
+                    box_color = (0, 0, 255)
+                elif danger_level == "high":
+                    box_color = (0, 140, 255)
+                elif danger_level == "medium":
+                    box_color = (0, 255, 255)
+                else:
+                    box_color = (0, 255, 0)
+
+                # Draw Bounding Box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
+                
+                # Draw Trajectory
+                if len(history) > 2:
+                    pts = np.array([(pt[0], pt[1]) for pt in history], np.int32).reshape((-1, 1, 2))
+                    cv2.polylines(frame, [pts], False, box_color, 2)
+
+                # Draw Overlay Badges with Large, High-Contrast Dark Card
+                badge_title = f"{detected_threat.replace('_', ' ').upper()} #{formatted_track_id} [{risk_score}% RISK - {danger_level.upper()}]"
+                behavior_clean = behaviour.upper().replace('_', ' ')
+                direction_clean = direction_vector.upper().replace('_', ' ')
+                badge_behavior = f"BEHAVIOR: {behavior_clean}"
+                if velocity > 1.0:
+                    badge_behavior += f" | {round(velocity, 1)} px/s"
+                if direction_clean not in ["STATIONARY", "NONE", "UNKNOWN"]:
+                    badge_behavior += f" | {direction_clean}"
+
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                diag = math.sqrt(w_frame**2 + h_frame**2)
+                # Dynamic large font scaling based on footage resolution
+                scale_title = max(0.80, min(1.35, round(diag / 1350.0, 2)))
+                scale_sub = max(0.75, min(1.25, round(diag / 1500.0, 2)))
+                thick = max(2, min(3, int(diag / 700.0)))
+
+                (w1, h1), _ = cv2.getTextSize(badge_title, font, scale_title, thick)
+                (w2, h2), _ = cv2.getTextSize(badge_behavior, font, scale_sub, thick)
+                pad_x = int(14 * (diag / 800.0))
+                pad_y = int(10 * (diag / 800.0))
+                box_w = max(w1, w2) + (pad_x * 2)
+                box_h = h1 + h2 + (pad_y * 3)
+
+                # Ensure box stays within frame boundaries horizontally
+                bx1 = max(10, x1)
+                if bx1 + box_w > w_frame - 10:
+                    bx1 = max(10, w_frame - 10 - box_w)
+                bx2 = min(w_frame - 10, bx1 + box_w)
+
+                # Vertical positioning: avoid top HUD (top 50-70px) and avoid clipping
+                hud_margin = int(55 * (diag / 900.0))
+                if y1 - box_h - 10 >= hud_margin:
+                    by1 = y1 - box_h - 6
+                    by2 = y1 - 2
+                elif y2 + box_h + 10 <= h_frame:
+                    by1 = y2 + 4
+                    by2 = y2 + box_h + 8
+                else:
+                    by1 = min(h_frame - box_h - 10, max(hud_margin + 10, y1 + 10))
+                    by2 = by1 + box_h
+
+                # Solid dark backing card for 100% contrast against any background
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (10, 14, 20), -1)
+                # Outer border in threat color
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), box_color, thick + 1)
+                # Left accent indicator bar
+                accent_w = max(6, int(8 * (diag / 800.0)))
+                cv2.rectangle(frame, (bx1, by1), (bx1 + accent_w, by2), box_color, -1)
+
+                # Line 1: Title (Bold White text)
+                t1_y = by1 + h1 + pad_y
+                cv2.putText(frame, badge_title, (bx1 + pad_x + 6, t1_y), font, scale_title, (255, 255, 255), thick, cv2.LINE_AA)
+
+                # Line 2: Behavior (Bold Vibrant Neon Yellow/Cyan text for instant readability)
+                t2_y = t1_y + h2 + pad_y + 4
+                cv2.putText(frame, badge_behavior, (bx1 + pad_x + 6, t2_y), font, scale_sub, (0, 255, 255), thick, cv2.LINE_AA)
+
+                # Trigger alerts for high/critical threats
+                alert_key = f"alert_{formatted_track_id}"
+                if danger_level in ["high", "critical"] or state in ["OBJECT_APPROACHING"]:
+                    if current_time - self.last_alert_time.get(alert_key, 0) > self.alert_cooldown:
+                        self.trigger_alert(
+                            track_id=formatted_track_id,
+                            species=detected_threat,
+                            confidence=confidence,
+                            frame=frame,
+                            danger_level=danger_level,
+                            risk_score=risk_score,
+                            behaviour=behaviour,
+                            movement_vector=direction_vector
+                        )
+                        self.last_alert_time[alert_key] = current_time
+
+                # Update Active Tracks Map
+                active[formatted_track_id] = {
+                    "class": raw_class,
+                    "first_seen": first_seen,
+                    "last_seen": current_time,
+                    "state": state,
+                    "behavior": behaviour,
+                    "risk_level": danger_level.upper(),
+                    "speed": round(velocity, 1),
+                    "direction": direction_vector
+                }
+                self.active_tracks = active
+
+                # Store primary telemetry item
+                telemetry = {
+                    "track_id": formatted_track_id,
+                    "animal": detected_threat,
+                    "category": category,
+                    "confidence": float(confidence),
+                    "bbox": [x1, y1, x2, y2],
+                    "behavior": behaviour,
+                    "behaviour": behaviour,
+                    "pose_pattern": pose_pattern,
+                    "risk_score": risk_score,
+                    "danger_level": danger_level,
+                    "risk_level": danger_level.upper(),
+                    "direction": direction_vector,
+                    "movement_vector": direction_vector,
+                    "movement_direction": direction_vector,
+                    "speed": round(velocity, 1),
+                    "velocity_px_sec": round(velocity, 1),
+                    "distance_travelled": behavior_metrics.get("distance_travelled", 0.0),
+                    "human_distance": behavior_metrics.get("human_distance"),
+                    "loitering": behavior_metrics.get("loitering", False),
+                    "group_size": len(boxes),
+                    "class_id": cls,
+                    "class_name": label,
+                    "bounding_box": {"x_min": x1, "y_min": y1, "x_max": x2, "y_max": y2},
+                    "center_x": cx,
+                    "center_y": cy,
+                    "width": w,
+                    "height": h,
+                    "trajectory": [(pt[0], pt[1]) for pt in history],
+                    "state": state,
+                    "duration": round(current_time - first_seen, 1),
+                    "timestamp": datetime.now().isoformat(),
+                    "camera_id": getattr(self, 'camera_id', 'default'),
+                    "frame_id": self.frame_counter
+                }
+                detected_threats.append(telemetry)
                     
-                    behaviour = behavior_metrics["behaviour"]
-                    velocity = behavior_metrics["speed"]
-                    direction_vector = behavior_metrics["movement_direction"]
-                    pose_pattern = f"Observable behavior: {behaviour}"
-
-                    # Dynamic Risk Assessment
-                    risk_score, danger_level = self.calculate_dynamic_risk(
-                        detected_threat, behaviour, velocity, direction_vector, group_size=len(boxes), is_night=is_night
-                    )
-                    
-                    base_risk_weight = cfg_class.get("risk_weight", 10)
-                    risk_score = min(int((risk_score + base_risk_weight) / 2), 100)
-
-                    # Color scheme based on danger level
-                    if danger_level == "critical":
-                        box_color = (0, 0, 255)
-                    elif danger_level == "high":
-                        box_color = (0, 140, 255)
-                    elif danger_level == "medium":
-                        box_color = (0, 255, 255)
-                    else:
-                        box_color = (0, 255, 0)
-
-                    # Draw Bounding Box
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
-                    
-                    # Draw Trajectory
-                    if len(history) > 2:
-                        pts = np.array([(pt[0], pt[1]) for pt in history], np.int32)
-                        pts = pts.reshape((-1, 1, 2))
-                        cv2.polylines(frame, [pts], False, box_color, 2)
-
-                    # Draw Overlay Badges (Using Formatted Track ID)
-                    badge_text = f"{detected_threat.upper()} #{formatted_track_id} [{risk_score}% RISK]"
-                    cv2.rectangle(frame, (x1, max(y1 - 40, 0)), (x1 + len(badge_text)*10 + 10, y1), box_color, -1)
-                    cv2.putText(frame, badge_text, (x1 + 5, y1 - 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-                    
-                    sub_badge = f"{state} | {behaviour}"
-                    cv2.putText(frame, sub_badge, (x1 + 5, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-
-                    # Deduplicated Alert Logic (Trigger only if State changed to high threat or cooldown expired)
-                    alert_key = f"alert_{formatted_track_id}"
-                    if danger_level in ["high", "critical"] or state in ["OBJECT_APPROACHING"]:
-                        if current_time - self.last_alert_time.get(alert_key, 0) > self.alert_cooldown:
-                            self.trigger_alert(
-                                track_id=formatted_track_id,
-                                species=detected_threat,
-                                confidence=confidence,
-                                frame=frame,
-                                danger_level=danger_level,
-                                risk_score=risk_score,
-                                behaviour=behaviour,
-                                movement_vector=direction_vector
-                            )
-                            self.last_alert_time[alert_key] = current_time
-
-                    # Update Active Tracks Map
-                    active[formatted_track_id] = {
-                        "class": raw_class,
-                        "first_seen": first_seen,
-                        "last_seen": current_time,
-                        "state": state
-                    }
-                    self.active_tracks = active
-
-                    # Store primary telemetry item
-                    telemetry = {
-                        "track_id": formatted_track_id, # Replaces raw int track_id
-                        "animal": detected_threat,
-                        "category": category,
-                        "confidence": float(confidence),
-                        "bbox": [x1, y1, x2, y2],
-                        "behaviour": behaviour,
-                        "pose_pattern": pose_pattern,
-                        "risk_score": risk_score,
-                        "danger_level": danger_level,
-                        "movement_vector": direction_vector,
-                        "velocity_px_sec": round(velocity, 1),
-                        "distance_travelled": behavior_metrics["distance_travelled"],
-                        "human_distance": behavior_metrics["human_distance"],
-                        "group_size": len(boxes),
-                        "class_id": cls,
-                        "class_name": label,
-                        "bounding_box": {"x_min": x1, "y_min": y1, "x_max": x2, "y_max": y2},
-                        "center_x": cx,
-                        "center_y": cy,
-                        "width": w,
-                        "height": h,
-                        "trajectory": [(pt[0], pt[1]) for pt in history],
-                        "state": state,
-                        "duration": round(current_time - first_seen, 1),
-                        "timestamp": datetime.now().isoformat(),
-                        "camera_id": getattr(self, 'camera_id', 'default'),
-                        "frame_id": self.frame_counter
-                    }
-                    detected_threats.append(telemetry)
-                    
-        # Analytics Archive: Cleanup lost tracks and write to JSON
+        # Cleanup lost tracks
         current_time = time.time()
         active = getattr(self, 'active_tracks', {})
         lost_ids = []
         for tid, tdata in active.items():
-            if current_time - tdata["last_seen"] > 2.0: # Lost after 2 seconds
+            if current_time - tdata["last_seen"] > 2.0:
                 tdata["state"] = "OBJECT_LOST"
                 lost_ids.append(tid)
-                
-                # Append to analytics log
-                try:
-                    with open("analytics_log.json", "a") as af:
-                        af.write(json.dumps(tdata) + "\n")
-                except:
-                    pass
 
         for tid in lost_ids:
             del active[tid]
+            if hasattr(self, 'smoothed_bboxes') and tid in self.smoothed_bboxes:
+                del self.smoothed_bboxes[tid]
         self.active_tracks = active
-                    
-        import gc
-        gc.collect()
 
         inference_time = (time.time() - start_time) * 1000  # ms
         self.fps = 1000 / inference_time if inference_time > 0 else 0
         
+        # Draw prominent Full-Width Behavioral Telemetry HUD Bar on frame
+        if detected_threats:
+            top_threat = max(detected_threats, key=lambda t: t.get("risk_score", 0))
+            t_animal = top_threat.get("animal", "THREAT").upper()
+            t_tid = top_threat.get("track_id", "0")
+            t_beh = top_threat.get("behavior", "DETECTED").upper().replace('_', ' ')
+            t_dir = top_threat.get("direction", "STATIONARY").upper().replace('_', ' ')
+            t_spd = top_threat.get("speed", 0.0)
+            t_risk = top_threat.get("risk_score", 0)
+            t_lvl = top_threat.get("risk_level", "LOW")
+
+            diag = math.sqrt(w_frame**2 + h_frame**2)
+            scale_hud = max(0.70, min(1.15, round(diag / 1600.0, 2)))
+            thick_hud = max(2, min(3, int(diag / 750.0)))
+
+            hud_text = f" AI BEHAVIOR: {t_animal} #{t_tid} | {t_beh} | {t_spd} px/s | RISK: {t_risk}% ({t_lvl}) "
+            (hw, hh), _ = cv2.getTextSize(hud_text, cv2.FONT_HERSHEY_SIMPLEX, scale_hud, thick_hud)
+
+            # Fit scale if needed
+            if hw > w_frame - 20:
+                scale_hud = round(scale_hud * ((w_frame - 30) / float(hw)), 2)
+                (hw, hh), _ = cv2.getTextSize(hud_text, cv2.FONT_HERSHEY_SIMPLEX, scale_hud, thick_hud)
+
+            hud_h = int(hh * 2.2) + 16
+            hud_accent = (0, 0, 255) if t_risk >= 75 else ((0, 165, 255) if t_risk >= 50 else (0, 255, 0))
+
+            # Full-width dark bar across top
+            cv2.rectangle(frame, (0, 0), (w_frame, hud_h), (8, 12, 18), -1)
+            cv2.rectangle(frame, (0, hud_h - 3), (w_frame, hud_h), hud_accent, -1)
+            # Text centered vertically
+            hud_ty = int(hud_h * 0.68)
+            cv2.putText(frame, hud_text, (18, hud_ty), cv2.FONT_HERSHEY_SIMPLEX, scale_hud, (255, 255, 255), thick_hud, cv2.LINE_AA)
+
         metrics = {
             "fps": round(self.fps, 1),
             "inference_time_ms": round(inference_time, 1),
             "total_detections": detected_count,
             "false_positive_candidates": getattr(self, 'unconfirmed_detections', 0),
-            "threats": detected_threats
+            "threats": detected_threats,
+            "behavior_events": detected_behavior_events
         }
 
         return frame, metrics

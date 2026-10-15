@@ -83,10 +83,275 @@
             padding: var(--space-lg);
             margin-bottom: var(--space-lg);
         }
+
+        /* Wildlife Detection Toast Container & Card Styles */
+        #wildlifeDetectionToastContainer {
+            position: fixed;
+            top: 85px;
+            right: 24px;
+            z-index: 100000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: none;
+            max-width: 440px;
+            width: calc(100% - 48px);
+        }
+
+        .wildlife-toast-card {
+            pointer-events: auto;
+            background: linear-gradient(135deg, rgba(20, 10, 10, 0.96), rgba(35, 12, 12, 0.96));
+            border: 2px solid #ff4444;
+            border-radius: 14px;
+            box-shadow: 0 12px 35px rgba(0,0,0,0.85), 0 0 25px rgba(255, 68, 68, 0.35);
+            padding: 16px 18px;
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(12px);
+            font-family: 'Inter', sans-serif;
+            animation: toastSlideIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .wildlife-toast-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.9), 0 0 30px rgba(255, 68, 68, 0.5);
+        }
+
+        .wildlife-toast-card.toast-exiting {
+            animation: toastSlideOut 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes toastSlideIn {
+            0% {
+                opacity: 0;
+                transform: translateX(110%) scale(0.95);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        @keyframes toastSlideOut {
+            0% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translateX(110%) scale(0.95);
+            }
+        }
+
+        .toast-progress-bar {
+            height: 4px;
+            background: #ff4444;
+            width: 100%;
+            transition: width 8s linear;
+            border-radius: 2px;
+        }
+
+        /* ======================================================== */
+        /* ADMIN SIDE DETECTION ALERT POPUP SYSTEM                   */
+        /* ======================================================== */
+        #adminSideAlertContainer {
+            position: fixed;
+            top: 85px;
+            right: 20px;
+            z-index: 999999;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            width: 420px;
+            max-width: calc(100vw - 36px);
+            pointer-events: none;
+        }
+
+        .admin-side-alert-card {
+            pointer-events: auto;
+            background: linear-gradient(145deg, rgba(16, 24, 39, 0.97) 0%, rgba(15, 23, 42, 0.99) 100%);
+            border-radius: 16px;
+            border: 2px solid #ef4444;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), 0 0 28px rgba(239, 68, 68, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            color: #f8fafc;
+            overflow: hidden;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            animation: adminSideSlideIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+        }
+
+        .admin-side-alert-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 20px 48px rgba(0, 0, 0, 0.9), 0 0 35px rgba(239, 68, 68, 0.55);
+        }
+
+        .admin-side-alert-card.fade-exit {
+            animation: adminSideSlideOut 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes adminSideSlideIn {
+            0% {
+                opacity: 0;
+                transform: translateX(115%) scale(0.92);
+            }
+            100% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+        }
+
+        @keyframes adminSideSlideOut {
+            0% {
+                opacity: 1;
+                transform: translateX(0) scale(1);
+            }
+            100% {
+                opacity: 0;
+                transform: translateX(115%) scale(0.9);
+            }
+        }
+
+        .admin-side-alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.35);
+        }
+
+        .admin-side-alert-header .tag-live {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .admin-side-alert-header .pulse-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #ef4444;
+            box-shadow: 0 0 10px #ef4444;
+            animation: sideAlertPulse 1.2s infinite alternate;
+        }
+
+        @keyframes sideAlertPulse {
+            0% { transform: scale(0.85); opacity: 0.6; }
+            100% { transform: scale(1.35); opacity: 1; }
+        }
+
+        .admin-side-alert-body {
+            padding: 14px 16px;
+            display: flex;
+            gap: 14px;
+            align-items: center;
+        }
+
+        .admin-side-alert-thumb {
+            width: 100px;
+            height: 85px;
+            border-radius: 10px;
+            overflow: hidden;
+            flex-shrink: 0;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: #000;
+            position: relative;
+        }
+
+        .admin-side-alert-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .admin-side-alert-info {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .admin-side-alert-title {
+            font-size: 1.05rem;
+            font-weight: 800;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 6px;
+        }
+
+        .admin-side-alert-badge {
+            padding: 3px 9px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .admin-side-alert-meta {
+            font-size: 0.76rem;
+            color: #94a3b8;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .admin-side-alert-behavior {
+            font-size: 0.82rem;
+            color: #38bdf8;
+            background: rgba(56, 189, 248, 0.12);
+            padding: 3px 8px;
+            border-radius: 6px;
+            display: inline-block;
+            font-weight: 700;
+            margin-top: 3px;
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            letter-spacing: 0.3px;
+        }
+
+        .admin-side-alert-actions {
+            display: flex;
+            gap: 8px;
+            padding: 10px 16px 12px;
+            background: rgba(0, 0, 0, 0.25);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .admin-side-alert-btn {
+            flex: 1;
+            padding: 7px 10px;
+            border-radius: 8px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            transition: all 0.2s ease;
+            text-decoration: none;
+        }
     </style>
 </head>
 
 <body>
+    <!-- Persistent Real-Time Wildlife Detection Alert Toast Notification Container -->
+    <div id="wildlifeDetectionToastContainer"></div>
+    <!-- Dedicated Admin Side Detection Alert Popup System -->
+    <div id="adminSideAlertContainer"></div>
     <!-- Navigation Bar -->
     <nav class="navbar" style="background: rgba(26, 31, 26, 0.95);">
         <div class="container">
@@ -249,8 +514,25 @@
                         </div>
                     </div>
 
+                    <!-- Quick Camera Source Selectors & Input -->
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-outline" style="font-size: 0.8rem; padding: 6px 12px; color: #00e676; border-color: #00e676;" onclick="selectLocalWebcam()" title="Use PC/Laptop built-in or USB webcam">
+                            💻 Local Webcam
+                        </button>
+                        <button type="button" class="btn btn-outline" style="font-size: 0.8rem; padding: 6px 12px; color: #38bdf8; border-color: #38bdf8;" onclick="selectIpWebcam()" title="Enter phone or ESP32 IP webcam">
+                            📱 Phone / IP Cam
+                        </button>
+                        <div style="display: flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(0, 230, 118, 0.4);">
+                            <span style="font-size: 0.8rem; font-weight: 700; color: #00e676;">📹</span>
+                            <input type="text" id="ipWebcamInput" placeholder="IP:Port e.g. 192.168.1.5:8080 (blank for webcam)" 
+                                   style="background: #0f172a; border: 1px solid #334155; color: #38bdf8; padding: 6px 10px; border-radius: 6px; font-size: 0.85rem; width: 280px; font-family: monospace; outline: none;"
+                                   onkeypress="if(event.key === 'Enter') startLiveMonitoring()">
+                        </div>
+                    </div>
+
                     <button class="btn btn-primary" id="btn-start-monitoring" onclick="startLiveMonitoring()">Start Surveillance</button>
                     <button class="btn btn-outline" style="color: var(--color-accent); border-color: var(--color-accent);" onclick="simulateDetection()">Simulate Intrusion</button>
+                    <button class="btn btn-outline" id="btn-desktop-notif" style="color: #38bdf8; border-color: #38bdf8; padding: 8px 14px; font-size: 0.85rem;" onclick="requestDesktopNotificationPermission()" title="Enable OS / Desktop Browser Notifications">🔔 Desktop Alerts</button>
                     <button class="btn btn-outline" id="btn-stop-monitoring" style="display: none; color: var(--color-danger-high); border-color: var(--color-danger-high);" onclick="stopDetectionStream()">Stop</button>
                 </div>
             </div>
@@ -270,7 +552,7 @@
                             </div>
                         </div>
                         <div style="background: #000; border-radius: 12px; padding: 2px; box-shadow: 0 0 40px rgba(0, 230, 118, 0.2); border: 2px solid #1a1a1a;">
-                            <img id="video-stream" src="" alt="Stream Output" style="width: 100%; border-radius: 10px; max-height: 52vh; min-height: 320px; object-fit: contain; background: #0a0a0a; display: block; margin: 0 auto;">
+                            <img id="video-stream" src="" alt="Stream Output" style="width: 100%; border-radius: 10px; min-height: 580px; max-height: 85vh; object-fit: contain; background: #0a0a0a; display: block; margin: 0 auto;">
                         </div>
                     </div>
                     
@@ -855,16 +1137,16 @@
     <!-- ========================================================= -->
     <!-- POPUP 1: SMS Alert Popup                                   -->
     <!-- ========================================================= -->
-    <div id="smsAlertModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; display: flex; align-items: center; justify-content: center;">
+    <div id="smsAlertModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; align-items: center; justify-content: center;">
         <div style="background: linear-gradient(135deg, #1a0a0a, #2d1010); border: 2px solid #ff4444; border-radius: 16px; padding: 32px; max-width: 480px; width: 90%; box-shadow: 0 0 40px rgba(255,68,68,0.4); animation: popupSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
             <!-- Header -->
             <div style="text-align: center; margin-bottom: 20px;">
-                <div style="font-size: 3rem; margin-bottom: 8px;">📱</div>
-                <h2 style="color: #ff4444; margin: 0; font-size: 1.5rem; letter-spacing: 1px;">🚨 WILDLIFE DETECTED!</h2>
-                <p style="color: rgba(255,255,255,0.5); font-size: 0.8rem; margin-top: 4px;">Wildlife Intrusion Alert System</p>
+                <div id="smsModalIcon" style="font-size: 3rem; margin-bottom: 8px;">🚨</div>
+                <h2 id="smsModalTitle" style="color: #ff4444; margin: 0; font-size: 1.5rem; letter-spacing: 1px;">🚨 THREAT DETECTED!</h2>
+                <p id="smsModalSubtitle" style="color: rgba(255,255,255,0.5); font-size: 0.8rem; margin-top: 4px;">Intrusion Alert System</p>
             </div>
             <!-- Detection Preview -->
-            <div style="background: rgba(0,0,0,0.4); border-radius: 10px; padding: 12px; margin-bottom: 16px; border: 1px solid rgba(255,68,68,0.3);">
+            <div style="background: rgba(0,0,0,0.4); border-radius: 10px; padding: 12px; margin-bottom: 12px; border: 1px solid rgba(255,68,68,0.3);">
                 <img id="smsModalImage" src="" alt="Detection" style="width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; display: block;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
                     <div>
@@ -873,6 +1155,21 @@
                     </div>
                     <div id="smsModalDangerBadge" style="background: #ff4444; color: white; padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700;">HIGH RISK</div>
                 </div>
+            </div>
+            <!-- Behavioral Analysis Display -->
+            <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="font-size: 0.72rem; color: rgba(255,255,255,0.5); text-transform: uppercase;">Observed Behavior</div>
+                    <strong id="smsModalBehavior" style="color: #64b5f6; font-size: 0.95rem;">STANDING (STATIONARY)</strong>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-size: 0.72rem; color: rgba(255,255,255,0.5); text-transform: uppercase;">Risk Score</div>
+                    <strong id="smsModalRiskScore" style="color: #ff5252; font-size: 1.1rem;">85%</strong>
+                </div>
+            </div>
+            <!-- Auto Status Badge -->
+            <div id="smsModalAutoBadge" style="display: none; background: rgba(76,175,80,0.15); border: 1px solid #4caf50; color: #81c784; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; text-align: center; margin-bottom: 12px; font-weight: 600;">
+                ⚡ Automated Alert Dispatched &bull; Active Surveillance Mode
             </div>
             <!-- SMS Info -->
             <div style="background: rgba(255,68,68,0.1); border: 1px solid rgba(255,68,68,0.3); border-radius: 8px; padding: 12px; margin-bottom: 20px; text-align: center;">
@@ -894,7 +1191,7 @@
     <!-- ========================================================= -->
     <!-- POPUP 2: Alert Sound Popup                                 -->
     <!-- ========================================================= -->
-    <div id="soundAlertModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1001; display: flex; align-items: center; justify-content: center;">
+    <div id="soundAlertModal" class="modal hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 99999; display: flex; align-items: center; justify-content: center;">
         <div style="background: linear-gradient(135deg, #1a1000, #2d2010); border: 2px solid #ff9900; border-radius: 16px; padding: 32px; max-width: 480px; width: 90%; box-shadow: 0 0 40px rgba(255,153,0,0.4); animation: popupSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);">
             <!-- Header -->
             <div style="text-align: center; margin-bottom: 20px;">
@@ -1039,6 +1336,6 @@
             }
         }
     </script>
-    <script src="script.js?v=4.0"></script>
+    <script src="script.js?v=5.0"></script>
 </body>
 </html>
