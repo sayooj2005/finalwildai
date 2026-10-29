@@ -13,9 +13,8 @@ function getBackendUrl() {
     if (window.location.protocol === 'file:' || !window.location.host || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         return 'http://localhost:8083';
     }
-    // Cloud hosting on Vercel: default to current origin (handled by vercel.json rewrites)
-    // or user can specify their Render/Railway domain
-    return window.location.origin;
+    // Cloud hosting on Vercel: default to your Render backend
+    return 'https://finalwildai-backend.onrender.com';
 }
 
 function getBackendWsUrl() {
