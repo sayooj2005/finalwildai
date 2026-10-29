@@ -958,11 +958,10 @@
                 </div>
 
                 <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <button type="button" class="btn-action-clean outline" onclick="selectBrowserCamera()" id="btn-browser-cam" title="Stream this device camera via browser (Zero-install for Cloud / Phone)">📱 Browser / Phone Cam</button>
-                    <button type="button" class="btn-action-clean outline" onclick="selectLocalWebcam()">Local USB</button>
-                    <button type="button" class="btn-action-clean outline" onclick="selectIpWebcam()">IP / Tunnel</button>
+                    <button type="button" class="btn-action-clean outline" onclick="selectLocalWebcam()">Local Webcam</button>
+                    <button type="button" class="btn-action-clean outline" onclick="selectIpWebcam()">Phone / IP Cam</button>
                     <input type="text" id="ipWebcamInput" class="form-input-clean" style="width: 240px; padding: 7px 12px;"
-                           placeholder="IP:Port or HTTPS Tunnel" onkeypress="if(event.key === 'Enter') startLiveMonitoring()">
+                           placeholder="IP:Port e.g. 192.168.1.5:8080" onkeypress="if(event.key === 'Enter') startLiveMonitoring()">
                     <button class="btn-action-clean primary" id="btn-start-monitoring" onclick="startLiveMonitoring()">Start Surveillance</button>
                     <button class="btn-action-clean outline" onclick="simulateDetection()">Simulate Intrusion</button>
                     <button class="btn-action-clean outline" id="btn-desktop-notif" onclick="requestDesktopNotificationPermission()">Desktop Alerts</button>
