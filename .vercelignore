@@ -1,0 +1,11 @@
+requirements.txt
+*.py
+*.pt
+*.db
+*.sqlite
+scratch/
+__pycache__/
+render.yaml
+edge_relay.py
+phone_to_cloud.py
+test_*.py
