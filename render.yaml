@@ -3,7 +3,7 @@ services:
     name: wildai-cloud
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn wildlife_intrusion_api:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn wildlife_intrusion_api:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
     envVars:
       - key: MODEL_PATH
         value: yolov8n.pt

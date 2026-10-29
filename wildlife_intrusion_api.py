@@ -675,6 +675,18 @@ async def generate_mjpeg_stream():
                 + frame_bytes + b"\r\n"
             )
             await asyncio.sleep(0.005)
+        elif pipeline_manager.latest_jpeg is None and last_sent_id == -1:
+            # Yield standby radar frame immediately on stream open to prevent empty stream timeout
+            standby, _, _ = pipeline_manager.get_latest_raw()
+            _, buf = cv2.imencode('.jpg', standby, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+            frame_bytes = buf.tobytes()
+            last_sent_id = 0
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n"
+                + frame_bytes + b"\r\n"
+            )
+            await asyncio.sleep(0.03)
         else:
             await asyncio.sleep(0.02)
 
@@ -688,9 +700,49 @@ async def video_feed():
             "Cache-Control": "no-cache, no-store, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
-            "Connection": "keep-alive"
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*"
         }
     )
+
+@app.get("/api/camera/latest_frame")
+async def get_latest_frame():
+    """Returns the latest processed JPEG frame directly."""
+    if pipeline_manager.latest_jpeg is not None:
+        return Response(content=pipeline_manager.latest_jpeg, media_type="image/jpeg", headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Access-Control-Allow-Origin": "*"
+        })
+    standby, _, _ = pipeline_manager.get_latest_raw()
+    _, buf = cv2.imencode('.jpg', standby, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+    return Response(content=buf.tobytes(), media_type="image/jpeg", headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Access-Control-Allow-Origin": "*"
+    })
+
+@app.get("/api/camera/telemetry")
+async def get_camera_telemetry():
+    """Returns real-time telemetry and detections as JSON fallback if WebSockets are blocked."""
+    with pipeline_manager.lock:
+        dets = list(pipeline_manager.latest_detections)
+        behaviors = list(pipeline_manager.latest_behavior_events)
+        active_b = list(pipeline_manager.active_behaviors)
+        escape = pipeline_manager.latest_escape_route
+        status = pipeline_manager.camera_status
+        fps = pipeline_manager.fps
+        inf_ms = pipeline_manager.inference_time_ms
+
+    return {
+        "type": "detection",
+        "camera_status": status,
+        "ai_status": "processing" if status == "connected" else "idle",
+        "fps": round(fps, 1),
+        "inference_time_ms": round(inf_ms, 1),
+        "detections": dets,
+        "behavior_events": behaviors,
+        "active_behaviors": active_b,
+        "escape_route": escape
+    }
 
 @app.get("/api/camera/status")
 async def get_camera_status():

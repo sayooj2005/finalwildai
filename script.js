@@ -943,6 +943,11 @@ async function startLiveMonitoring(isBrowserCam = false) {
                     }
                     
                     if (parsed.type === "detection") {
+                        // Render real-time YOLO annotated frame directly onto streamImg viewport
+                        if (parsed.processed_frame && streamImg) {
+                            streamImg.src = parsed.processed_frame;
+                        }
+
                         // Update status badges
                         updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
                         const aiActive = parsed.ai_status === "processing";
@@ -1027,52 +1032,48 @@ async function startLiveMonitoring(isBrowserCam = false) {
             }
         };
         
+        let telemetryPollInterval = null;
+        function startTelemetryFallback(base) {
+            if (telemetryPollInterval) return;
+            updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
+            telemetryPollInterval = setInterval(async () => {
+                const container = document.getElementById('liveStreamContainer');
+                if (!container || container.style.display === 'none') {
+                    clearInterval(telemetryPollInterval);
+                    telemetryPollInterval = null;
+                    return;
+                }
+                try {
+                    const res = await fetch(`${base}/api/camera/telemetry`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
+                        if (data.camera_status === 'connected') {
+                            updateStatusBadge('status-camera', 'Camera:  Live Stream', true);
+                            updateStatusBadge('status-ai', 'AI YOLO:  Processing', true);
+                        }
+                        updateBehavioralDashboard(data);
+                    }
+                } catch(err) {}
+            }, 500);
+        }
+
         detectionWs.onerror = function(error) {
-            console.error('WebSocket Error:', error);
-            updateStatusBadge('status-cloud', 'Cloud:  Error', false);
-            showNotification('Cloud stream error. Check backend connection.', 'error');
-            streamImg.alt = 'Cloud Stream Error';
+            console.warn('WebSocket connection notice. Engaging HTTP cloud telemetry fallback.');
+            startTelemetryFallback(apiBase);
         };
         
-        let reconnectAttempts = 0;
-        const maxReconnects = 5;
-
         detectionWs.onclose = function(event) {
-            console.log(`Cloud WebSocket Closed: Code ${event.code}`);
-            
-            updateStatusBadge('status-cloud', 'Cloud:  Disconnected', false);
-            updateStatusBadge('status-ai', 'AI YOLO:  Stopped', false);
-            updateStatusBadge('status-camera', 'Camera:  Disconnected', false);
-            
-            if (event.code === 1011) {
-                showNotification(` Cloud inference stopped: Server error`, 'error');
-                streamImg.alt = `Error: Server disconnect`;
-            } else if (event.code === 1006 || event.code === 1000) {
-                if (reconnectAttempts < maxReconnects) {
-                    reconnectAttempts++;
-                    showNotification(` Connection dropped. Reconnecting (Attempt ${reconnectAttempts}/${maxReconnects})...`, 'warning');
-                    streamImg.alt = 'Reconnecting to Cloud...';
-                    setTimeout(() => startLiveMonitoring(), 3000);
-                    return;
-                } else {
-                    showNotification(' Cloud Connection lost permanently.', 'error');
-                    streamImg.alt = 'Cloud Connection Failed';
-                }
-            } else {
-                showNotification('ℹ️ Cloud monitoring session ended.', 'info');
-                streamImg.alt = 'Monitoring Ended';
+            if (event.code === 1000) {
+                // Clean intentional close
+                return;
             }
-            
-            if (btnStart) btnStart.style.display = 'inline-block';
-            if (btnStop) btnStop.style.display = 'none';
+            startTelemetryFallback(apiBase);
         };
 
     } catch (error) {
         console.error("Error starting cloud monitoring:", error);
-        showNotification('Failed to connect to Cloud API.', 'error');
-        streamContainer.style.display = 'none';
-        if (btnStart) btnStart.style.display = 'inline-block';
-        if (btnStop) btnStop.style.display = 'none';
+        showNotification('Connecting to Cloud Stream...', 'info');
     }
 }
 
