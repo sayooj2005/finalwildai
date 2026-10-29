@@ -1,19 +1,21 @@
 // ===================================
 // Cloud Backend & API Resolution
 // ===================================
+if (window.location.protocol !== 'file:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    if (!localStorage.getItem('wildai_backend_url') || localStorage.getItem('wildai_backend_url').includes('vercel.app')) {
+        localStorage.setItem('wildai_backend_url', 'https://finalwildai-backend.onrender.com');
+    }
+}
+
 function getBackendUrl() {
-    if (window.WILDAI_BACKEND_URL && window.WILDAI_BACKEND_URL.trim()) {
-        return window.WILDAI_BACKEND_URL.trim().replace(/\/$/, '');
-    }
-    const saved = localStorage.getItem('wildai_backend_url');
-    if (saved && saved.trim()) {
-        return saved.trim().replace(/\/$/, '');
-    }
     // Local development or file execution
     if (window.location.protocol === 'file:' || !window.location.host || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         return 'http://localhost:8083';
     }
-    // Cloud hosting on Vercel: default to your Render backend
+    const saved = localStorage.getItem('wildai_backend_url');
+    if (saved && saved.trim() && !saved.includes('vercel.app')) {
+        return saved.trim().replace(/\/$/, '');
+    }
     return 'https://finalwildai-backend.onrender.com';
 }
 
