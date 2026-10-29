@@ -1,4 +1,37 @@
 // ===================================
+// Cloud Backend & API Resolution
+// ===================================
+function getBackendUrl() {
+    if (window.WILDAI_BACKEND_URL && window.WILDAI_BACKEND_URL.trim()) {
+        return window.WILDAI_BACKEND_URL.trim().replace(/\/$/, '');
+    }
+    const saved = localStorage.getItem('wildai_backend_url');
+    if (saved && saved.trim()) {
+        return saved.trim().replace(/\/$/, '');
+    }
+    // Local development or file execution
+    if (window.location.protocol === 'file:' || !window.location.host || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        return 'http://localhost:8083';
+    }
+    // Cloud hosting on Vercel: default to current origin (handled by vercel.json rewrites)
+    // or user can specify their Render/Railway domain
+    return window.location.origin;
+}
+
+function getBackendWsUrl() {
+    const httpUrl = getBackendUrl();
+    const wsProto = httpUrl.startsWith('https') ? 'wss:' : 'ws:';
+    const host = httpUrl.replace(/^https?:\/\//, '');
+    return `${wsProto}//${host}/ws/client`;
+}
+
+// In-Browser Device Camera Ingestion State
+let browserMediaStream = null;
+let browserStreamInterval = null;
+let browserHiddenVideo = null;
+let browserHiddenCanvas = null;
+
+// ===================================
 // Global Variables
 // ===================================
 let currentUser = null;
@@ -636,6 +669,12 @@ function changeSectorZone(newZone) {
 }
 
 function selectLocalWebcam() {
+    const isCloud = window.location.protocol === 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    if (isCloud) {
+        showNotification('On Cloud (HTTPS): Starting this device\'s camera directly via browser...', 'info');
+        selectBrowserCamera();
+        return;
+    }
     const ipInput = document.getElementById('ipWebcamInput');
     if (ipInput) ipInput.value = '';
     startLiveMonitoring();
@@ -649,22 +688,151 @@ function selectIpWebcam() {
             ipInput.value = saved;
         }
         ipInput.focus();
-        showNotification('Enter your phone IP address (e.g. 192.168.29.26:8080) then click Start', 'info');
+        if (window.location.protocol === 'https:') {
+            showNotification('On Cloud HTTPS: Enter an HTTPS Tunnel URL (ngrok) or run edge_relay.py on your PC.', 'info');
+        } else {
+            showNotification('Enter your phone IP address (e.g. 192.168.29.26:8080) then click Start', 'info');
+        }
     }
 }
 
-async function startLiveMonitoring() {
+// In-Browser Device Camera Streaming (Option C: Zero-Install Phone/Laptop Camera)
+async function selectBrowserCamera() {
+    await startDeviceCameraStream();
+}
+
+async function startDeviceCameraStream() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showNotification('Browser camera access (getUserMedia) is not supported in this browser.', 'error');
+        return;
+    }
+
+    try {
+        stopDeviceCameraStream(false);
+        showNotification('Requesting device camera access...', 'info');
+
+        // Request front or rear environment camera
+        browserMediaStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: { ideal: "environment" }
+            },
+            audio: false
+        });
+
+        if (!browserHiddenVideo) {
+            browserHiddenVideo = document.createElement('video');
+            browserHiddenVideo.setAttribute('playsinline', '');
+            browserHiddenVideo.setAttribute('muted', '');
+            browserHiddenVideo.style.display = 'none';
+            document.body.appendChild(browserHiddenVideo);
+        }
+        browserHiddenVideo.srcObject = browserMediaStream;
+        await browserHiddenVideo.play();
+
+        if (!browserHiddenCanvas) {
+            browserHiddenCanvas = document.createElement('canvas');
+            browserHiddenCanvas.width = 640;
+            browserHiddenCanvas.height = 480;
+        }
+        const ctx = browserHiddenCanvas.getContext('2d');
+        const apiBase = getBackendUrl();
+
+        // Inform the backend pipeline to prepare for pushed frames
+        try {
+            await fetch(`${apiBase}/api/settings/camera`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: "PUSH_INGEST" })
+            });
+        } catch(e) {
+            console.warn("Camera settings notify notice:", e);
+        }
+
+        // Set input indicator
+        const ipInput = document.getElementById('ipWebcamInput');
+        if (ipInput) ipInput.value = 'Browser Device Camera';
+
+        // Stream frames at ~15 FPS to the cloud backend
+        let pushing = false;
+        browserStreamInterval = setInterval(() => {
+            if (!browserMediaStream || pushing || !browserHiddenVideo.videoWidth) return;
+            pushing = true;
+            ctx.drawImage(browserHiddenVideo, 0, 0, 640, 480);
+            browserHiddenCanvas.toBlob(async (blob) => {
+                if (blob) {
+                    try {
+                        await fetch(`${apiBase}/api/camera/push_frame`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'image/jpeg',
+                                'X-Camera-ID': 'BROWSER_DEVICE_CAM'
+                            },
+                            body: blob
+                        });
+                    } catch(err) {
+                        // Drop frame on network jitter
+                    }
+                }
+                pushing = false;
+            }, 'image/jpeg', 0.65);
+        }, 66); // ~15 FPS
+
+        showNotification('📷 Device camera active! Streaming live frames to Cloud AI Engine...', 'success');
+
+        // Launch surveillance viewer & telemetry
+        await startLiveMonitoring(true);
+
+    } catch (err) {
+        console.error("Browser camera streaming error:", err);
+        showNotification('Camera access denied or unavailable: ' + err.message, 'error');
+    }
+}
+
+function stopDeviceCameraStream(stopViewer = true) {
+    if (browserStreamInterval) {
+        clearInterval(browserStreamInterval);
+        browserStreamInterval = null;
+    }
+    if (browserMediaStream) {
+        browserMediaStream.getTracks().forEach(track => {
+            try { track.stop(); } catch(e) {}
+        });
+        browserMediaStream = null;
+    }
+    if (browserHiddenVideo && browserHiddenVideo.srcObject) {
+        browserHiddenVideo.srcObject = null;
+    }
+    if (stopViewer) {
+        stopDetectionStream();
+    }
+}
+
+async function startLiveMonitoring(isBrowserCam = false) {
     const ipInput = document.getElementById('ipWebcamInput');
     let camUrl = ipInput ? ipInput.value.trim() : '';
 
+    const isHttps = window.location.protocol === 'https:';
+    const isPrivateIp = /^(http:\/\/)?(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/i.test(camUrl);
+
+    if (isHttps && isPrivateIp && !isBrowserCam) {
+        showNotification(
+            '⚠️ Direct 192.168.x.x HTTP is blocked by browsers on HTTPS. Use "Browser Camera", run edge_relay.py, or enter an HTTPS tunnel (ngrok).',
+            'warning'
+        );
+    }
+
     let targetUrl = "0";
-    if (camUrl && camUrl !== "0" && camUrl.toLowerCase() !== "webcam" && camUrl.toLowerCase() !== "laptop") {
+    if (isBrowserCam || camUrl === 'Browser Device Camera') {
+        targetUrl = "PUSH_INGEST";
+    } else if (camUrl && camUrl !== "0" && camUrl.toLowerCase() !== "webcam" && camUrl.toLowerCase() !== "laptop") {
         let cleanUrl = camUrl.replace(".:", ":").trim();
         if (cleanUrl.endsWith("/")) cleanUrl = cleanUrl.slice(0, -1);
         if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://") && !cleanUrl.startsWith("rtsp://")) {
-            cleanUrl = "http://" + cleanUrl;
+            cleanUrl = (isHttps ? "https://" : "http://") + cleanUrl;
         }
-        if (!cleanUrl.endsWith("/video") && !cleanUrl.endsWith("/shot.jpg") && !cleanUrl.endsWith(".mp4")) {
+        if (!cleanUrl.endsWith("/video") && !cleanUrl.endsWith("/shot.jpg") && !cleanUrl.endsWith(".mp4") && !cleanUrl.includes("ngrok") && !cleanUrl.includes("trycloudflare")) {
             cleanUrl = cleanUrl + "/video";
         }
         targetUrl = cleanUrl;
@@ -673,12 +841,10 @@ async function startLiveMonitoring() {
         targetUrl = "0";
     }
 
-    const apiBase = (window.location.protocol === 'file:' || !window.location.host) 
-        ? 'http://localhost:8083' 
-        : window.location.origin;
+    const apiBase = getBackendUrl();
     
     try {
-        const sourceLabel = targetUrl === "0" ? "Built-in / USB Webcam" : targetUrl;
+        const sourceLabel = targetUrl === "0" ? "Built-in / USB Webcam" : (targetUrl === "PUSH_INGEST" ? "Browser Device Camera" : targetUrl);
         showNotification(` Connecting ${sourceLabel}...`, 'info');
         const resp = await fetch(`${apiBase}/api/settings/camera`, {
             method: 'POST',
@@ -709,7 +875,7 @@ async function startLiveMonitoring() {
         detectionsContainer.innerHTML = '';
     }
 
-    streamContainer.style.display = 'block';
+    if (streamContainer) streamContainer.style.display = 'block';
     
     // Connect native high-speed MJPEG stream directly for fluid, continuous playback
     const mjpegUrl = `${apiBase}/video_feed?t=${Date.now()}`;
@@ -752,13 +918,8 @@ async function startLiveMonitoring() {
     try {
         updateStatusBadge('status-cloud', 'Cloud:  Connecting...', false);
         
-        // Derive dynamic backend URL
-        const wsHost = (window.location.protocol === 'file:' || !window.location.host)
-            ? 'localhost:8083'
-            : window.location.host;
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         // Connect to the central cloud inference websocket endpoint
-        const wsUrl = `${protocol}//${wsHost}/ws/client`;
+        const wsUrl = getBackendWsUrl();
         
         if (detectionWs) detectionWs.close();
         
@@ -915,6 +1076,20 @@ async function startLiveMonitoring() {
 }
 
 function stopDetectionStream() {
+    if (browserStreamInterval) {
+        clearInterval(browserStreamInterval);
+        browserStreamInterval = null;
+    }
+    if (browserMediaStream) {
+        browserMediaStream.getTracks().forEach(track => {
+            try { track.stop(); } catch(e) {}
+        });
+        browserMediaStream = null;
+    }
+    if (browserHiddenVideo && browserHiddenVideo.srcObject) {
+        browserHiddenVideo.srcObject = null;
+    }
+
     if (detectionWs) {
         detectionWs.close();
         detectionWs = null;

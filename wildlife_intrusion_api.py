@@ -117,13 +117,22 @@ import numpy as np
 import base64
 
 # Cloud Deployment Config
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+raw_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+configured_origins = [o.strip() for o in raw_origins if o.strip()]
+
+# If wildcard is requested with credentials, Starlette requires allow_origin_regex
+origin_regex = None
+if "*" in configured_origins:
+    configured_origins = []
+    origin_regex = r"^https?:\/\/.*$"
+
 MODEL_PATH = os.getenv("MODEL_PATH", "yolo11n.pt")
 INFERENCE_INTERVAL = float(os.getenv("INFERENCE_INTERVAL", "0.2"))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=configured_origins,
+    allow_origin_regex=origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -270,6 +279,14 @@ class LiveStreamPipeline:
             self.cap_obj = None
 
     def _camera_capture_worker(self, src):
+        if str(src) == "PUSH_INGEST":
+            with self.lock:
+                self.camera_status = "connected"
+            print("[PIPELINE] Ready for live edge / browser pushed frames.")
+            while self.cap_worker_running:
+                time.sleep(0.5)
+            return
+
         retry_delay = 1.0
         while self.cap_worker_running:
             try:
@@ -384,11 +401,15 @@ def normalize_cam_url(raw_val: str):
     raw = str(raw_val).strip()
     if not raw or raw in ["0", "webcam", "laptop"]:
         return 0
+    if raw.lower() in ["push", "browser", "edge", "device", "push_ingest"]:
+        return "PUSH_INGEST"
     raw = raw.replace(".:", ":").rstrip("/")
     if not raw.startswith("http://") and not raw.startswith("https://") and not raw.startswith("rtsp://"):
         raw = "http://" + raw
-    if not raw.endswith("/video") and not raw.endswith("/shot.jpg") and not raw.endswith(".mp4"):
-        raw = raw + "/video"
+    # Only append /video if no file/stream path was specified and not an existing tunnel endpoint
+    if not any(raw.endswith(ext) for ext in [".mjpg", ".mjpeg", ".mp4", "/video", "/shot.jpg", "/live", "/mjpg"]) and "?" not in raw:
+        if not ("ngrok" in raw or "trycloudflare" in raw or "localtunnel" in raw):
+            raw = raw + "/video"
     return raw
 
 def background_db_persistence(detections, behavior_events, escape_route, snapshot_frame):
@@ -677,18 +698,42 @@ async def get_camera_status():
     return pipeline_manager.get_status()
 
 @app.post("/api/esp32/frame")
-async def receive_esp32_frame(request: Request):
-    """ESP32-CAM sends raw JPEG bytes to this Cloud endpoint."""
-    body = await request.body()
-    if body:
-        try:
-            nparr = np.frombuffer(body, np.uint8)
+@app.post("/api/camera/push_frame")
+async def receive_camera_frame(request: Request):
+    """
+    Ingests frames pushed from:
+    1. Browser client-side camera (HTML5 Canvas via /api/camera/push_frame)
+    2. Edge relay agent (edge_relay.py)
+    3. ESP32-CAM devices
+    Supports both raw binary JPEG and application/json {image: base64} payloads.
+    """
+    try:
+        content_type = request.headers.get("content-type", "")
+        frame_bytes = None
+        source_id = request.headers.get("X-Camera-ID") or os.getenv("CAMERA_ID", "CLOUD_INGEST_CAM")
+
+        if "application/json" in content_type:
+            data = await request.json()
+            b64_img = data.get("image", "")
+            if "," in b64_img:
+                b64_img = b64_img.split(",", 1)[1]
+            if b64_img:
+                frame_bytes = base64.b64decode(b64_img)
+            if data.get("source"):
+                source_id = data.get("source")
+        else:
+            frame_bytes = await request.body()
+
+        if frame_bytes:
+            nparr = np.frombuffer(frame_bytes, np.uint8)
             frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if frame is not None and frame.size > 0:
-                pipeline_manager.push_raw_frame(frame, source=os.getenv("CAMERA_ID", "ESP32_CAM_01"))
-        except Exception as e:
-            return {"status": "error", "message": f"Malformed frame: {e}"}
-    return {"status": "ok", "message": "Frame received."}
+                pipeline_manager.push_raw_frame(frame, source=source_id)
+                return {"status": "ok", "message": "Frame received."}
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"status": "error", "message": f"Frame ingestion error: {e}"})
+
+    return JSONResponse(status_code=400, content={"status": "error", "message": "Empty or unrecognized frame payload"})
 
 @app.websocket("/ws/client")
 async def websocket_client(websocket: WebSocket):
