@@ -1,125 +1,957 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WILDAI Operations Hub</title>
+    <meta name="description" content="WildAI - Intelligent Wildlife Monitoring, Human-Wildlife Conflict Prevention, and Habitat Conservation Platform.">
+    <title>WildAI — Habitat Conservation & Wildlife Intrusion Intelligence</title>
+    <link rel="stylesheet" href="styles.css">
     <style>
-        :root { --bg: #0f172a; --panel: #1e293b; --text: #f8fafc; --primary: #3b82f6; --accent: #10b981; --border: #334155; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 100vh; }
-        
-        .navbar { background: var(--panel); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .navbar h1 { margin: 0; font-size: 1.5rem; letter-spacing: 2px; color: var(--text); display: flex; align-items: center; gap: 10px; }
-        .navbar h1 span { color: var(--accent); }
-        
-        .container { max-width: 1200px; margin: 40px auto; padding: 0 20px; flex: 1; }
-        .section-title { font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; border-bottom: 1px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; margin-top: 40px; }
-        .section-title:first-child { margin-top: 0; }
-        
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        
-        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 25px; transition: transform 0.2s, box-shadow 0.2s; text-decoration: none; color: var(--text); display: flex; flex-direction: column; gap: 10px; outline: none; }
-        .card:hover, .card:focus { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); border-color: var(--primary); }
-        
-        .card h2 { margin: 0; font-size: 1.3rem; color: var(--primary); }
-        .card p { margin: 0; color: #cbd5e1; font-size: 0.95rem; line-height: 1.5; flex: 1; }
-        
-        .badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background: #334155; color: #f8fafc; align-self: flex-start; text-transform: uppercase; }
-        .badge.critical { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444; }
-        .badge.active { background: rgba(16, 185, 129, 0.2); color: var(--accent); border: 1px solid var(--accent); }
-        
-        .footer { text-align: center; padding: 20px; color: #64748b; font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: auto; }
-        
-        @media (max-width: 600px) {
-            .navbar { flex-direction: column; text-align: center; gap: 10px; padding: 15px; }
-            .container { margin: 20px auto; }
+        /* ===================================
+           The Habitats Trust Inspired Editorial Landing Styles
+           =================================== */
+        .landing-top-ribbon {
+            background: #0a1b12;
+            color: rgba(240, 248, 242, 0.78);
+            font-size: 0.8rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(199, 134, 41, 0.25);
+        }
+
+        .landing-top-ribbon .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .ribbon-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: var(--color-secondary-light);
+        }
+
+        .ribbon-tag span.dot {
+            width: 7px;
+            height: 7px;
+            background: #22c55e;
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px #22c55e;
+        }
+
+        /* Hero Styling */
+        .hero-luxury {
+            position: relative;
+            min-height: 88vh;
+            display: flex;
+            align-items: center;
+            background: linear-gradient(180deg, rgba(10, 26, 17, 0.72) 0%, rgba(8, 20, 13, 0.9) 100%),
+                        url('elephant-forest.jpg') center/cover no-repeat fixed;
+            color: #ffffff;
+            padding: 7rem 0 5rem 0;
+            overflow: hidden;
+        }
+
+        .hero-luxury::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 80px;
+            background: linear-gradient(to top, var(--color-bg-light), transparent);
+            pointer-events: none;
+        }
+
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: rgba(199, 134, 41, 0.18);
+            border: 1px solid rgba(199, 134, 41, 0.4);
+            border-radius: 9999px;
+            color: var(--color-secondary-light);
+            font-family: var(--font-heading);
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 1.5rem;
+        }
+
+        .hero-title-editorial {
+            font-family: var(--font-editorial);
+            font-size: clamp(2.6rem, 5.5vw, 4.4rem);
+            font-weight: 600;
+            line-height: 1.12;
+            letter-spacing: -0.015em;
+            color: #ffffff;
+            margin-bottom: 1.5rem;
+            max-width: 900px;
+        }
+
+        .hero-lead-text {
+            font-size: clamp(1.05rem, 1.8vw, 1.25rem);
+            color: rgba(235, 245, 238, 0.88);
+            line-height: 1.7;
+            max-width: 760px;
+            margin-bottom: 2.5rem;
+            font-weight: 300;
+        }
+
+        .hero-cta-cluster {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.25rem;
+            align-items: center;
+            margin-bottom: 3.5rem;
+        }
+
+        .btn-luxury-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 1rem 2rem;
+            background: linear-gradient(135deg, var(--color-secondary) 0%, #aa6c1b 100%);
+            color: #ffffff;
+            font-family: var(--font-heading);
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border-radius: var(--radius-full);
+            text-decoration: none;
+            box-shadow: 0 10px 28px rgba(170, 108, 27, 0.35);
+            transition: all var(--transition-base);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-luxury-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 36px rgba(170, 108, 27, 0.5);
+            background: linear-gradient(135deg, var(--color-secondary-light) 0%, var(--color-secondary) 100%);
+            color: #ffffff;
+        }
+
+        .btn-luxury-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 1rem 1.85rem;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            backdrop-filter: blur(8px);
+            font-family: var(--font-heading);
+            font-size: 0.95rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            border-radius: var(--radius-full);
+            text-decoration: none;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            transition: all var(--transition-base);
+        }
+
+        .btn-luxury-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            border-color: rgba(255, 255, 255, 0.6);
+            transform: translateY(-2px);
+        }
+
+        /* Pillars / Stat Banner */
+        .hero-metric-strip {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            max-width: 1050px;
+        }
+
+        .hero-metric-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .hero-metric-val {
+            font-family: var(--font-heading);
+            font-size: 1.85rem;
+            font-weight: 700;
+            color: var(--color-secondary-light);
+            letter-spacing: -0.02em;
+        }
+
+        .hero-metric-desc {
+            font-size: 0.85rem;
+            color: rgba(230, 242, 235, 0.7);
+            line-height: 1.4;
+        }
+
+        /* Section Header Editorial */
+        .section-header-editorial {
+            text-align: center;
+            max-width: 780px;
+            margin: 0 auto 3.5rem auto;
+        }
+
+        .section-eyebrow {
+            display: inline-block;
+            font-family: var(--font-heading);
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--color-secondary);
+            margin-bottom: 0.75rem;
+        }
+
+        .section-title-editorial {
+            font-family: var(--font-editorial);
+            font-size: clamp(2.2rem, 4vw, 3.2rem);
+            font-weight: 600;
+            color: var(--color-primary);
+            line-height: 1.2;
+            margin-bottom: 1.25rem;
+        }
+
+        .section-sub-editorial {
+            font-size: 1.05rem;
+            color: var(--color-text-secondary);
+            line-height: 1.7;
+        }
+
+        /* About Section Layout */
+        .about-split-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+        }
+
+        .about-image-card {
+            position: relative;
+            border-radius: var(--radius-xl);
+            overflow: hidden;
+            box-shadow: var(--shadow-xl);
+            border: 1px solid rgba(199, 134, 41, 0.25);
+        }
+
+        .about-image-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            min-height: 440px;
+        }
+
+        .about-image-badge {
+            position: absolute;
+            bottom: 24px;
+            left: 24px;
+            background: rgba(10, 26, 17, 0.88);
+            backdrop-filter: blur(10px);
+            padding: 1rem 1.5rem;
+            border-radius: var(--radius-md);
+            border-left: 4px solid var(--color-secondary);
+            color: #ffffff;
+            max-width: 300px;
+        }
+
+        .about-image-badge h4 {
+            font-size: 1rem;
+            margin: 0 0 4px 0;
+            color: var(--color-secondary-light);
+        }
+
+        .about-image-badge p {
+            font-size: 0.8rem;
+            color: rgba(240, 248, 242, 0.75);
+            margin: 0;
+            line-height: 1.4;
+        }
+
+        .about-content-block {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .about-pillar-list {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-top: 1rem;
+        }
+
+        .about-pillar-box {
+            background: var(--color-surface);
+            padding: 1.25rem;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-border);
+            transition: all var(--transition-fast);
+        }
+
+        .about-pillar-box:hover {
+            border-color: var(--color-secondary);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .about-pillar-box h4 {
+            font-size: 1rem;
+            color: var(--color-primary);
+            margin-bottom: 0.35rem;
+            font-family: var(--font-heading);
+        }
+
+        .about-pillar-box p {
+            font-size: 0.85rem;
+            color: var(--color-text-secondary);
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        /* Capability Cards */
+        .capability-grid-luxury {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+        }
+
+        .cap-card-editorial {
+            background: var(--color-surface);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--color-border);
+            padding: 2.25rem;
+            display: flex;
+            flex-direction: column;
+            transition: all var(--transition-base);
+            position: relative;
+        }
+
+        .cap-card-editorial:hover {
+            transform: translateY(-6px);
+            border-color: var(--color-secondary);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .cap-card-pill {
+            display: inline-block;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--color-secondary);
+            background: rgba(199, 134, 41, 0.1);
+            padding: 4px 10px;
+            border-radius: var(--radius-full);
+            margin-bottom: 1.25rem;
+            align-self: flex-start;
+        }
+
+        .cap-card-title {
+            font-family: var(--font-heading);
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: var(--color-primary);
+            margin-bottom: 0.85rem;
+            line-height: 1.3;
+        }
+
+        .cap-card-desc {
+            font-size: 0.95rem;
+            color: var(--color-text-secondary);
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+            flex: 1;
+        }
+
+        .cap-feature-bullets {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-top: 1px solid var(--color-border);
+            padding-top: 1rem;
+        }
+
+        .cap-feature-bullets li {
+            font-size: 0.85rem;
+            color: var(--color-text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .cap-feature-bullets li svg {
+            width: 14px;
+            height: 14px;
+            color: var(--color-secondary);
+            flex-shrink: 0;
+        }
+
+        /* Conservation Statement Banner */
+        .conservation-banner-wrap {
+            background: linear-gradient(135deg, var(--color-primary-dark) 0%, var(--color-primary) 100%);
+            border-radius: var(--radius-xl);
+            padding: 4rem 3rem;
+            color: #ffffff;
+            position: relative;
+            overflow: hidden;
+            box-shadow: var(--shadow-xl);
+            border: 1px solid rgba(199, 134, 41, 0.3);
+        }
+
+        .conservation-banner-wrap::after {
+            content: '';
+            position: absolute;
+            right: -80px;
+            top: -80px;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(199, 134, 41, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        /* Citizen & Officer Quick Pathways */
+        .pathways-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 3.5rem;
+        }
+
+        .pathway-card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 1.5rem;
+            transition: all var(--transition-base);
+        }
+
+        .pathway-card:hover {
+            box-shadow: var(--shadow-lg);
+            border-color: var(--color-secondary);
+        }
+
+        .pathway-card.authority {
+            background: linear-gradient(180deg, #102417 0%, #0d1e13 100%);
+            border-color: rgba(199, 134, 41, 0.35);
+            color: #ffffff;
+        }
+
+        .pathway-card.authority h3 {
+            color: #ffffff;
+        }
+
+        .pathway-card.authority p {
+            color: rgba(230, 240, 235, 0.78);
+        }
+
+        /* Field Device Utility */
+        .field-utility-drawer {
+            background: var(--color-surface-warm);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: 1.25rem 1.75rem;
+            margin-top: 3rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .field-utility-input {
+            background: #ffffff;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            padding: 0.5rem 0.85rem;
+            font-size: 0.85rem;
+            width: 280px;
+            outline: none;
+            color: var(--color-text-primary);
+        }
+
+        .field-utility-input:focus {
+            border-color: var(--color-secondary);
+        }
+
+        /* Comprehensive Editorial Footer */
+        .landing-footer {
+            background: #08140d;
+            color: rgba(230, 240, 235, 0.7);
+            padding: 5rem 0 2.5rem 0;
+            border-top: 2px solid var(--color-primary-light);
+        }
+
+        .footer-columns-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1.2fr;
+            gap: 3rem;
+            margin-bottom: 4rem;
+        }
+
+        .footer-col-brand h3 {
+            font-family: var(--font-heading);
+            color: #ffffff;
+            font-size: 1.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .footer-col-brand p {
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: rgba(220, 235, 225, 0.65);
+            max-width: 320px;
+        }
+
+        .footer-col-nav h4 {
+            font-family: var(--font-heading);
+            color: var(--color-secondary-light);
+            font-size: 0.88rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1.25rem;
+        }
+
+        .footer-col-nav ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.65rem;
+        }
+
+        .footer-col-nav ul a {
+            color: rgba(240, 248, 242, 0.8);
+            font-size: 0.88rem;
+            text-decoration: none;
+            transition: color var(--transition-fast);
+        }
+
+        .footer-col-nav ul a:hover {
+            color: var(--color-secondary-light);
+        }
+
+        .footer-bottom-bar {
+            padding-top: 2rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.82rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        @media (max-width: 900px) {
+            .about-split-grid,
+            .pathways-grid,
+            .footer-columns-grid {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+            .hero-luxury {
+                padding: 6rem 0 4rem 0;
+            }
         }
     </style>
 </head>
+
 <body>
-
-    <div class="navbar">
-        <h1>WILD<span>AI</span> Operations Hub</h1>
-    </div>
-
-    <div class="container">
-        
-        <div class="section-title">Command & Control</div>
-        <div class="grid">
-            <a href="/live" class="card" aria-label="Live Monitoring">
-                <span class="badge active">Live System</span>
-                <h2>Live Monitoring</h2>
-                <p>Real-time dual-stream video feeds with AI bounding boxes, active tracking telemetry, and live threat metrics.</p>
-            </a>
-            <a href="/map" class="card" aria-label="Geospatial Intelligence Map">
-                <span class="badge active">Tactical Map</span>
-                <h2>Geospatial Intelligence</h2>
-                <p>High-density cluster mapping of incidents, wildlife detections, active risk zones, and dynamic evacuation routing.</p>
-            </a>
-            <a href="/incident-management" class="card" aria-label="Incident Management">
-                <span class="badge critical">Dispatch & Triage</span>
-                <h2>Incident Management</h2>
-                <p>Manage the full lifecycle of wildlife and poacher incursions. Assign officers and update response status.</p>
-            </a>
-        </div>
-
-        <div class="section-title">Community & Authority</div>
-        <div class="grid">
-            <a href="/user-portal.html" class="card" aria-label="User Portal with Sighting & Evidence Verification" style="border-left: 4px solid var(--accent);">
-                <span class="badge active">Escape Route & Sighting</span>
-                <h2>User Portal (Safe Routes & Evidence)</h2>
-                <p>Villager portal with Turn-by-Turn Safe Escape Route vectoring, Emergency SOS, and wildlife evidence submission with AI deepfake & GPS verification.</p>
-            </a>
-            <a href="/evidence-dashboard" class="card" aria-label="Evidence Verification Dashboard" style="border-left: 4px solid var(--primary);">
-                <span class="badge" style="background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid #3b82f6;">Officer Review</span>
-                <h2>Evidence Verification Dashboard</h2>
-                <p>Inspect metadata integrity, GPS location consistency, YOLO detections, duplicate history, and audit trail records.</p>
-            </a>
-            <a href="/admin-portal.html" class="card" aria-label="Admin Portal">
-                <span class="badge active">Command Center</span>
-                <h2>Admin Portal</h2>
-                <p>Centralized Surveillance & Decision Command. Manage alerts, view live feeds, and run simulations.</p>
-            </a>
-            <a href="/report.html" class="card" aria-label="Submit Public Report">
-                <h2>Public Reporting Portal</h2>
-                <p>Mobile-optimized interface for local villagers to upload photos and GPS data of wildlife sightings.</p>
-            </a>
-            <a href="/report-review" class="card" aria-label="Authority Report Review">
-                <h2>Authority Review</h2>
-                <p>Verify or reject community submissions. Deepfake authenticity scores and YOLO validation attached to all reports.</p>
-            </a>
-        </div>
-
-        <div class="section-title">Analytics & Health</div>
-        <div class="grid">
-            <a href="/analytics" class="card" aria-label="Data Analytics">
-                <h2>Data Analytics</h2>
-                <p>Macro-level KPI dashboards. Analyze species distributions, heatmaps, and historical alert frequencies.</p>
-            </a>
-            <a href="/diagnostics" class="card" aria-label="System Diagnostics">
-                <h2>System Diagnostics</h2>
-                <p>Hardware-level telemetry. Monitor GPU/CPU inference FPS, latency, SQLite health, and Twilio SMS connection status.</p>
-            </a>
-        </div>
-        
-        <div class="section-title">Training & Demonstration</div>
-        <div class="grid">
-            <a href="/demo" class="card" aria-label="Demo Control Panel" style="border-left: 4px solid #f59e0b;">
-                <span class="badge" style="background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid #f59e0b;">Simulation</span>
-                <h2>Demo Control Panel</h2>
-                <p>Trigger isolated demonstration scenarios (Tiger, Elephant, Route Blockages) explicitly watermarked to preserve production data.</p>
-            </a>
-        </div>
-        
-    </div>
-    
-    <div class="footer">
-        WILDAI Operations System &copy; 2026. Authorized personnel only.
-        <div style="margin-top: 15px; opacity: 0.1; transition: opacity 0.3s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.1">
-            <input type="text" id="ipcam" placeholder="IP Webcam URL (e.g. http://192.168.1.5:8080/video)" style="background: transparent; border: 1px solid #334155; color: #fff; padding: 4px; font-size: 10px; width: 250px; outline: none;">
-            <button onclick="setCam()" style="background: transparent; border: 1px solid #334155; color: #fff; padding: 4px 8px; font-size: 10px; cursor: pointer;">Set</button>
+    <!-- Top Conservation Ribbon -->
+    <div class="landing-top-ribbon">
+        <div class="container">
+            <div class="ribbon-tag">
+                <span class="dot"></span>
+                <span>Active Habitat Protection • Forest Border Surveillance System</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span style="font-size: 0.75rem; opacity: 0.75;">Western Ghats & Corridor Zones</span>
+                <div class="lang-switch">
+                    <button class="lang-btn active" data-lang-switch="en" id="langEn">English</button>
+                    <button class="lang-btn" data-lang-switch="ml" id="langMl">മലയാളം</button>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Main Navigation Bar -->
+    <nav class="navbar" id="navbar">
+        <div class="container">
+            <a href="index.html" class="navbar-brand">
+                <img src="logo.jpg" alt="WildAI Crest" style="height: 44px; border-radius: 8px; border: 1.5px solid var(--color-secondary);">
+                <div>
+                    <span data-lang="brand" style="font-weight: 800; letter-spacing: 0.04em;">WildAI</span>
+                    <span style="display: block; font-size: 0.65rem; color: var(--color-secondary); font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;">Conservation Tech</span>
+                </div>
+            </a>
+            <button class="navbar-toggle" id="navToggle" aria-label="Toggle navigation">
+                <span>&equiv;</span>
+            </button>
+            <ul class="navbar-menu" id="navMenu">
+                <li><a href="#about" data-lang="nav-about">About</a></li>
+                <li><a href="#features" data-lang="nav-features">Capabilities</a></li>
+                <li><a href="#conservation">Conservation</a></li>
+                <li><a href="user-portal.html" data-lang="nav-portal">User Portal</a></li>
+                <li><a href="emergency-sos.html" style="color: var(--color-danger-medium); font-weight: 600;">Emergency SOS</a></li>
+                <li><a href="login.html" class="btn btn-primary" data-lang="nav-admin" style="padding: 0.5rem 1.25rem;">Authority Login</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero-luxury">
+        <div class="container">
+            <div class="hero-kicker">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                <span>AI-Powered Human-Wildlife Coexistence</span>
+            </div>
+            <h1 class="hero-title-editorial" data-lang="hero-title">Protecting Lives, Preserving Wildlife</h1>
+            <p class="hero-lead-text" data-lang="hero-desc">
+                An intelligent conservation surveillance and early-warning platform. Combining boundary computer vision, behavioral animal trajectory tracking, verified community reporting, and safe evacuation vectoring to safeguard forest communities and endangered species.
+            </p>
+            <div class="hero-cta-cluster">
+                <a href="login.html" class="btn-luxury-primary" data-lang="btn-admin">
+                    <span>Authority Command Login</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                        <polyline points="12 5 19 12 12 19"></polyline>
+                    </svg>
+                </a>
+                <a href="user-portal.html" class="btn-luxury-secondary" data-lang="btn-report">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                    <span>Villager Portal & Safe Routes</span>
+                </a>
+                <a href="#features" class="btn-luxury-secondary" style="background: transparent; border-color: rgba(255,255,255,0.2);">
+                    <span>Explore Capabilities</span>
+                </a>
+            </div>
+
+            <div class="hero-metric-strip">
+                <div class="hero-metric-item">
+                    <div class="hero-metric-val">YOLOv11</div>
+                    <div class="hero-metric-desc" data-lang="stat-accuracy">High-Speed Edge Computer Vision with Real-Time Bounding Telemetry</div>
+                </div>
+                <div class="hero-metric-item">
+                    <div class="hero-metric-val">4-Tier</div>
+                    <div class="hero-metric-desc">Graduated Alarm Protocol from Low Boar Alerts to Critical Tiger Warnings</div>
+                </div>
+                <div class="hero-metric-item">
+                    <div class="hero-metric-val">Turn-by-Turn</div>
+                    <div class="hero-metric-desc">Dynamic Escape Routes Guiding Villagers Safely Away from Active Threats</div>
+                </div>
+                <div class="hero-metric-item">
+                    <div class="hero-metric-val">AI Audit</div>
+                    <div class="hero-metric-desc">Forensic EXIF & Tamper Verification for Community Sighting Submissions</div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Section: About WildAI -->
+    <section class="section" id="about" style="background: var(--color-bg-light); padding-top: 5rem;">
+        <div class="container">
+            <div class="about-split-grid">
+                <div class="about-image-card">
+                    <img src="elephant-forest.jpg" alt="Wildlife Conservation in Forest Corridor">
+                    <div class="about-image-badge">
+                        <h4>Habitat Buffer Monitoring</h4>
+                        <p>Non-invasive sensory detection preserving natural migratory pathways without harmful physical barriers.</p>
+                    </div>
+                </div>
+                <div class="about-content-block">
+                    <span class="section-eyebrow">Conservation Philosophy</span>
+                    <h2 class="section-title-editorial" data-lang="about-title">About the Project</h2>
+                    <p style="font-size: 1.05rem; line-height: 1.7; color: var(--color-text-secondary);" data-lang="about-desc1">
+                        Human-wildlife conflict is an increasing challenge in forest-border regions, resulting in tragic loss of human life, extensive agricultural crop devastation, and retaliatory threats to endangered wildlife.
+                    </p>
+                    <p style="font-size: 1rem; line-height: 1.7; color: var(--color-text-secondary);" data-lang="about-desc2">
+                        WildAI replaces hazardous electrical fences with an intelligent, multi-layered technological virtual barrier designed for coexistence:
+                    </p>
+                    <div class="about-pillar-list">
+                        <div class="about-pillar-box">
+                            <h4 data-lang="about-item1">Real-Time Monitoring</h4>
+                            <p data-lang="about-item1-desc">Continuous automated boundary surveillance of wildlife and unauthorized human movement.</p>
+                        </div>
+                        <div class="about-pillar-box">
+                            <h4 data-lang="about-item2">Behavioral Intelligence</h4>
+                            <p data-lang="about-item2-desc">Evaluates movement trajectory, velocity, and gestures for accurate threat classification.</p>
+                        </div>
+                        <div class="about-pillar-box">
+                            <h4 data-lang="about-item4">Verified Reporting</h4>
+                            <p data-lang="about-item4-desc">Participatory citizen science with AI deepfake detection and GPS verification.</p>
+                        </div>
+                        <div class="about-pillar-box">
+                            <h4 data-lang="about-item5">Emergency Response</h4>
+                            <p data-lang="about-item5-desc">One-touch SOS dispatches with safe-zone navigation avoiding predator locations.</p>
+                        </div>
+                    </div>
+                    <p style="font-size: 0.95rem; color: var(--color-text-secondary); margin-top: 0.5rem; font-style: italic;" data-lang="about-desc3">
+                        Through the integration of cutting-edge technology and conservation science, we aim to create a harmonious coexistence between humans and wildlife while supporting effective wildlife management strategies.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- System Capabilities Section -->
+    <section class="section" id="features" style="background: var(--color-surface-warm); padding-top: 6rem; padding-bottom: 6rem;">
+        <div class="container">
+            <div class="section-header-editorial">
+                <span class="section-eyebrow">Engineered Architecture</span>
+                <h2 class="section-title-editorial" data-lang="features-title">Intelligent Protection System</h2>
+                <p class="section-sub-editorial">
+                    Every module within WildAI is backed by genuine functional backend services, running real-time neural inference, spatial data routing, and forensic analysis.
+                </p>
+            </div>
+
+            <div class="capability-grid-luxury">
+                <!-- Cap 1: Detection -->
+                <div class="cap-card-editorial">
+                    <span class="cap-card-pill">Vision Neural Network</span>
+                    <h3 class="cap-card-title" data-lang="f1-title">Real-Time Detection</h3>
+                    <p class="cap-card-desc" data-lang="f1-desc">
+                        Advanced AI algorithms continuously monitor boundary zones, detecting wildlife movement and unauthorized human intrusion with high confidence and minimal latency.
+                    </p>
+                    <ul class="cap-feature-bullets">
+                        <li data-lang="f1-item1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> 24/7 automated surveillance</li>
+                        <li data-lang="f1-item2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> IP camera & ESP32-CAM stream intake</li>
+                        <li data-lang="f1-item3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Instant alert generation</li>
+                    </ul>
+                </div>
+
+                <!-- Cap 2: Classification -->
+                <div class="cap-card-editorial">
+                    <span class="cap-card-pill">Species Telemetry</span>
+                    <h3 class="cap-card-title" data-lang="f2-title">Species Classification</h3>
+                    <p class="cap-card-desc" data-lang="f2-desc">
+                        Behavioral pattern analysis evaluates movement speed, gestures, and acoustic signals to accurately identify species and assess danger levels.
+                    </p>
+                    <ul class="cap-feature-bullets">
+                        <li data-lang="f2-item1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Movement pattern recognition</li>
+                        <li data-lang="f2-item2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Tiger, Elephant, Leopard, Boar models</li>
+                        <li data-lang="f2-item3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Risk-based classification</li>
+                    </ul>
+                </div>
+
+                <!-- Cap 3: Graduated Alerts -->
+                <div class="cap-card-editorial">
+                    <span class="cap-card-pill">Acoustic & SMS Protocol</span>
+                    <h3 class="cap-card-title" data-lang="f3-title">Species-Specific Alerts</h3>
+                    <p class="cap-card-desc" data-lang="f3-desc">
+                        Customized warning systems activate graduated alarm intensities and dispatches based on animal danger level — from high-risk apex predators to lower-risk herbivores.
+                    </p>
+                    <ul class="cap-feature-bullets">
+                        <li data-lang="f3-item1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Graduated response protocol</li>
+                        <li data-lang="f3-item2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Fast2SMS & Twilio SMS integration</li>
+                        <li data-lang="f3-item3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Ultrasonic & audible deterrents</li>
+                    </ul>
+                </div>
+
+                <!-- Cap 4: Anti Poaching -->
+                <div class="cap-card-editorial">
+                    <span class="cap-card-pill">Perimeter Defense</span>
+                    <h3 class="cap-card-title" data-lang="f4-title">Anti-Poaching Detection</h3>
+                    <p class="cap-card-desc" data-lang="f4-desc">
+                        Identifies unauthorized human entry and potential poaching activities along restricted boundary lines, alerting forest authorities with GPS coordinates and photographic evidence.
+                    </p>
+                    <ul class="cap-feature-bullets">
+                        <li data-lang="f4-item1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Unauthorized entry detection</li>
+                        <li data-lang="f4-item2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Automatic authority alerts</li>
+                        <li data-lang="f4-item3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Chain-of-custody evidence archiving</li>
+                    </ul>
+                </div>
+
+                <!-- Cap 5: Verified Community Reports -->
+                <div class="cap-card-editorial">
+                    <span class="cap-card-pill">Participatory Science</span>
+                    <h3 class="cap-card-title" data-lang="f5-title">Verified Community Reports</h3>
+                    <p class="cap-card-desc" data-lang="f5-desc">
+                        Mobile portal enables villagers to report sightings with automated image authenticity verification (deepfake, manipulation, duplicate, and EXIF consistency checks).
+                    </p>
+                    <ul class="cap-feature-bullets">
+                        <li data-lang="f5-item1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> One-touch mobile upload</li>
+                        <li data-lang="f5-item2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> pHash duplicate & manipulation checks</li>
+                        <li data-lang="f5-item3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Official officer verification queue</li>
+                    </ul>
+                </div>
+
+                <!-- Cap 6: Emergency SOS & Routing -->
+                <div class="cap-card-editorial">
+                    <span class="cap-card-pill">GIS Life Safety</span>
+                    <h3 class="cap-card-title" data-lang="f6-title">Emergency SOS & Safe Routes</h3>
+                    <p class="cap-card-desc" data-lang="f6-desc">
+                        Instant emergency alert with dynamic turn-by-turn evacuation routes calculated in real time, vectoring residents away from active predator tracks to designated safe havens.
+                    </p>
+                    <ul class="cap-feature-bullets">
+                        <li data-lang="f6-item1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> One-touch emergency distress trigger</li>
+                        <li data-lang="f6-item2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Dynamic geospatial safe havens</li>
+                        <li data-lang="f6-item3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg> Real-time predator exclusion routing</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Conservation Section inspired by The Habitats Trust -->
+    <section class="section" id="conservation" style="background: var(--color-bg-light); padding: 6rem 0;">
+        <div class="container">
+            <div class="conservation-banner-wrap">
+                <div style="max-width: 780px;">
+                    <span style="display: inline-block; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-secondary-light); margin-bottom: 0.75rem;">
+                        Conservation Ethics & Ecological Balance
+                    </span>
+                    <h2 style="font-family: var(--font-editorial); font-size: clamp(2rem, 3.8vw, 3rem); font-weight: 600; line-height: 1.25; margin-bottom: 1.5rem; color: #ffffff;">
+                        Protecting Wildlife While Securing Forest Fringe Communities
+                    </h2>
+                    <p style="font-size: 1.05rem; line-height: 1.8; color: rgba(240, 248, 242, 0.88); margin-bottom: 2rem;">
+                        Wildlife corridors are vital lifelines for Asian Elephants, Royal Bengal Tigers, and vulnerable species. When physical encroachments or electric fences sever these natural migratory paths, conflicts surge. WildAI champions non-invasive acoustic and visual monitoring — keeping communities safe with early warnings without endangering wildlife.
+                    </p>
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                        <a href="user-portal.html" class="btn-luxury-primary" style="padding: 0.85rem 1.75rem;">
+                            <span>Visit User Safety Portal</span>
+                        </a>
+                        <a href="login.html" class="btn-luxury-secondary" style="padding: 0.85rem 1.75rem;">
+                            <span>Access Authority Dashboard</span>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two Distinct Pathways -->
+            <div class="pathways-grid">
+                <!-- Citizen Pathway -->
+                <div class="pathway-card">
+                    <div>
+                        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-secondary);">Community & Villagers</span>
+                        <h3 style="font-family: var(--font-heading); font-size: 1.6rem; color: var(--color-primary); margin: 0.5rem 0 0.75rem 0;">Citizen Portal & Safety Tools</h3>
+                        <p style="font-size: 0.95rem; color: var(--color-text-secondary); line-height: 1.6;">
+                            Report animal sightings directly from your mobile device, verify safe walking paths before travelling near forest borders, and activate Emergency SOS during dangerous encounters.
+                        </p>
+                    </div>
+                    <div>
+                        <a href="user-portal.html" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 0.85rem;">Open User Portal</a>
+                    </div>
+                </div>
+
+                <!-- Authority Pathway -->
+                <div class="pathway-card authority">
+                    <div>
+                        <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-secondary-light);">Forest Department</span>
+                        <h3 style="font-family: var(--font-heading); font-size: 1.6rem; margin: 0.5rem 0 0.75rem 0;">Authority Command Center</h3>
+                        <p style="font-size: 0.95rem; line-height: 1.6;">
+                            Monitor real-time boundary AI camera telemetry, inspect evidence forensic audits, dispatch field response personnel, and track species migration trends.
+                        </p>
+                    </div>
+                    <div>
+                        <a href="login.html" class="btn-luxury-primary" style="width: 100%; justify-content: center; padding: 0.85rem;">Officer Login Gateway</a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Field Deployment Camera Config Utility (Preserving existing index.html feature) -->
+            <div class="field-utility-drawer">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-secondary)" stroke-width="2">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    <div>
+                        <span style="font-weight: 700; font-size: 0.88rem; color: var(--color-primary);">Field Camera Node Configuration</span>
+                        <p style="font-size: 0.78rem; color: var(--color-text-secondary); margin: 0;">Configure IP webcam stream endpoint for boundary cameras</p>
+                    </div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <input type="text" id="ipcam" class="field-utility-input" placeholder="e.g. http://192.168.1.5:8080/video">
+                    <button onclick="setCam()" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">Connect</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Editorial Footer -->
+    <footer class="landing-footer">
+        <div class="container">
+            <div class="footer-columns-grid">
+                <div class="footer-col-brand">
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 1rem;">
+                        <img src="logo.jpg" alt="WildAI Seal" style="height: 38px; border-radius: 6px; border: 1px solid var(--color-secondary);">
+                        <span style="font-family: var(--font-heading); font-size: 1.4rem; font-weight: 800; color: #ffffff;">WildAI</span>
+                    </div>
+                    <p>
+                        AI-powered wildlife monitoring and human-wildlife conflict prevention platform. Protecting biodiversity, supporting frontline rangers, and safeguarding forest communities.
+                    </p>
+                </div>
+
+                <div class="footer-col-nav">
+                    <h4>Public Portal</h4>
+                    <ul>
+                        <li><a href="index.html">Home</a></li>
+                        <li><a href="#about">About Project</a></li>
+                        <li><a href="#features">Capabilities</a></li>
+                        <li><a href="user-portal.html">User Portal</a></li>
+                        <li><a href="emergency-sos.html">Emergency SOS</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-col-nav">
+                    <h4>Operations</h4>
+                    <ul>
+                        <li><a href="login.html">Officer Login</a></li>
+                        <li><a href="admin-portal.html">Admin Portal</a></li>
+                        <li><a href="live.html">Live Detection Feed</a></li>
+                        <li><a href="evidence-dashboard.html">Evidence Review</a></li>
+                        <li><a href="analytics.html">Analytics & Trends</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-col-nav">
+                    <h4>Field Support</h4>
+                    <p style="font-size: 0.85rem; color: rgba(220, 235, 225, 0.65); line-height: 1.6; margin-bottom: 1rem;">
+                        For sensor node deployment or emergency support inquiries:
+                    </p>
+                    <a href="mailto:support@wildai.org" style="color: var(--color-secondary-light); font-weight: 600; text-decoration: none; font-size: 0.9rem;">
+                        support@wildai.org
+                    </a>
+                </div>
+            </div>
+
+            <div class="footer-bottom-bar">
+                <div>
+                    WildAI Conservation Platform &copy; 2026. Non-invasive ecological monitoring.
+                </div>
+                <div style="display: flex; gap: 1.5rem;">
+                    <a href="#about" style="color: inherit; text-decoration: none;">Ethics & Policy</a>
+                    <a href="#features" style="color: inherit; text-decoration: none;">Architecture</a>
+                    <a href="login.html" style="color: var(--color-secondary-light); text-decoration: none;">Authority Access</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Camera Configuration Script (Preserving functionality) -->
     <script>
         async function setCam() {
             const url = document.getElementById('ipcam').value;
@@ -131,11 +963,13 @@
                     body: JSON.stringify({url})
                 });
                 const data = await res.json();
-                alert(data.message);
+                alert(data.message || "Camera stream updated successfully.");
             } catch(e) {
-                alert("Error setting camera.");
+                alert("Error connecting to camera endpoint.");
             }
         }
     </script>
+    <script src="script.js"></script>
 </body>
+
 </html>

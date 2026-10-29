@@ -17,15 +17,19 @@
     <!-- Turf.js for Spatial Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
     <style>
-        body { margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #1a1a2e; color: #fff; }
+        body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #0c1711; color: #f4f8f5; }
         
-        .header { background: #16213e; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #00C851; z-index: 1000; }
-        .header h1 { margin: 0; font-size: 1.5em; letter-spacing: 1px; }
+        .header { background: #13241b; padding: 12px 22px; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #c78629; z-index: 1000; }
+        .header h1 { margin: 0; font-family: 'Barlow', sans-serif; font-size: 1.4em; letter-spacing: 1px; color: #fff; text-transform: uppercase; }
         
         .controls { display: flex; gap: 10px; }
-        .btn { background: #0f3460; color: #fff; border: 1px solid #33b5e5; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-        .btn:hover { background: #33b5e5; color: #000; }
+        .btn { background: #1e4a32; color: #fff; border: 1px solid #c78629; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: 0.2s; font-family: inherit; }
+        .btn:hover { background: #c78629; color: #fff; }
         
         #map { flex: 1; width: 100%; z-index: 1; }
         

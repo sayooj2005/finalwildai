@@ -4,24 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WildAI - Community Wildlife Reporting</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        h1 { color: #2c3e50; text-align: center; margin-top: 0; border-bottom: 2px solid #00C851; padding-bottom: 10px; }
-        .form-group { margin-bottom: 15px; }
-        label { display: block; font-weight: bold; margin-bottom: 5px; color: #555; }
-        input[type="text"], textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; background-color: #faf8f2; color: #18221b; margin: 0; padding: 25px 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(10, 28, 18, 0.08); border: 1px solid #e2ddd0; }
+        h1 { color: #133321; font-family: 'Barlow', sans-serif; text-align: center; margin-top: 0; border-bottom: 2px solid #c78629; padding-bottom: 12px; font-size: 1.75rem; letter-spacing: 0.02em; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; font-weight: 600; margin-bottom: 6px; color: #18221b; font-size: 0.9rem; }
+        input[type="text"], textarea { width: 100%; padding: 11px 14px; border: 1px solid #d5cfbf; border-radius: 8px; box-sizing: border-box; font-family: inherit; }
+        input[type="text"]:focus, textarea:focus { border-color: #c78629; outline: none; }
         input[type="file"] { display: none; }
-        .file-btn { display: inline-block; background: #007bff; color: #fff; padding: 10px 15px; border-radius: 5px; cursor: pointer; text-align: center; font-weight: bold; width: 100%; box-sizing: border-box; }
-        .file-btn:hover { background: #0056b3; }
-        #preview { width: 100%; max-height: 300px; object-fit: contain; margin-top: 10px; display: none; border: 1px solid #ddd; border-radius: 5px; }
-        .submit-btn { background: #00C851; color: #fff; padding: 15px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1.1em; margin-top: 10px; }
-        .submit-btn:hover { background: #007e33; }
-        .gps-btn { background: #6c757d; color: #fff; border: none; padding: 8px 12px; border-radius: 5px; cursor: pointer; font-size: 0.9em; margin-top: 5px; }
+        .file-btn { display: inline-block; background: #133321; color: #fff; padding: 12px 18px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: 600; width: 100%; box-sizing: border-box; transition: background 0.2s; }
+        .file-btn:hover { background: #1e4a32; }
+        #preview { width: 100%; max-height: 300px; object-fit: contain; margin-top: 10px; display: none; border: 1px solid #d5cfbf; border-radius: 8px; }
+        .submit-btn { background: linear-gradient(135deg, #c78629, #aa6c1b); color: #fff; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700; width: 100%; font-size: 1.05rem; margin-top: 12px; transition: transform 0.2s, box-shadow 0.2s; letter-spacing: 0.04em; }
+        .submit-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(170, 108, 27, 0.35); }
+        .gps-btn { background: #3a492f; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; margin-top: 6px; font-weight: 600; }
+        .gps-btn:hover { background: #133321; }
         
-        #result-box { display: none; margin-top: 20px; padding: 15px; border-radius: 5px; background: #e8f5e9; border: 1px solid #c8e6c9; }
-        .result-title { font-weight: bold; color: #2e7d32; font-size: 1.1em; margin-bottom: 10px; }
-        .loader { display: none; text-align: center; margin-top: 15px; font-weight: bold; color: #007bff; }
+        #result-box { display: none; margin-top: 20px; padding: 16px; border-radius: 8px; background: #f3f8f4; border: 1px solid #c3dec8; }
+        .result-title { font-weight: 700; color: #1e4a32; font-size: 1.1em; margin-bottom: 10px; }
+        .loader { display: none; text-align: center; margin-top: 15px; font-weight: 600; color: #c78629; }
     </style>
 </head>
 <body>

@@ -4,12 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WildAI Incident Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        :root { --bg: #f5f6fa; --panel: #fff; --text: #2f3640; --border: #dcdde1; --primary: #0097e6; --accent: #44bd32; --danger: #c23616; --warning: #e1b12c; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        :root { --bg: #faf8f2; --panel: #ffffff; --text: #18221b; --border: #e2ddd0; --primary: #133321; --accent: #c78629; --danger: #c23934; --warning: #d97706; }
+        body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
         
         .header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 2px solid var(--primary); margin-bottom: 20px; flex-shrink: 0; }
-        .header h1 { margin: 0; color: #2f3640; font-size: 1.5rem; text-transform: uppercase; }
+        .header h1 { margin: 0; color: var(--primary); font-family: 'Barlow', sans-serif; font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.05em; }
         
         .filters { display: flex; gap: 15px; margin-bottom: 20px; background: var(--panel); padding: 15px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); flex-wrap: wrap; flex-shrink: 0; }
         .filters label { font-weight: bold; font-size: 0.9em; margin-right: 5px; }
