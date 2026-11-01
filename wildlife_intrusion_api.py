@@ -518,7 +518,9 @@ async def inference_loop():
     cam_lon = float(os.getenv("CAM_LON", "75.782"))
 
     def estimate_zone(bbox, fw, fh):
-        x1, y1, x2, y2 = bbox
+        if not bbox or len(bbox) < 4:
+            return "Zone-A (Center)"
+        x1, y1, x2, y2 = bbox[:4]
         cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
         if cx < fw / 2 and cy < fh / 2:
             return "Zone-A (Top-Left)"
@@ -569,12 +571,13 @@ async def inference_loop():
 
             # Execute YOLO inference in threadpool
             processed_frame, metrics = await run_in_threadpool(cloud_iot_detector.process_frame, raw_frame)
-            detections = metrics.get("threats", [])
-            behavior_events = metrics.get("behavior_events", [])
+            detections = metrics.get("threats") or []
+            behavior_events = metrics.get("behavior_events") or []
 
             h_frame, w_frame = raw_frame.shape[:2]
             for det in detections:
-                det["zone"] = estimate_zone(det["bbox"], w_frame, h_frame)
+                bbox = det.get("bbox") or [0, 0, w_frame, h_frame]
+                det["zone"] = estimate_zone(bbox, w_frame, h_frame)
                 det["camera_lat"] = cam_lat
                 det["camera_lon"] = cam_lon
 
@@ -588,6 +591,7 @@ async def inference_loop():
 
             # Safe Haven / Escape route
             escape_route = None
+            highest = None
             if detections:
                 highest = max(detections, key=lambda d: d.get("risk_score", 0))
                 if highest.get("risk_score", 0) >= 50:
@@ -629,7 +633,7 @@ async def inference_loop():
                     last_persistence_tracker[t_key] = now_ts
                     eligible_events.append(ev)
 
-            if eligible_events or (escape_route and highest.get("risk_score", 0) >= 70 and (now_ts - last_escape_persistence > 15.0)):
+            if eligible_events or (escape_route and highest and highest.get("risk_score", 0) >= 70 and (now_ts - last_escape_persistence > 15.0)):
                 last_escape_persistence = now_ts
                 h_p, w_p = processed_frame.shape[:2]
                 snap_w = min(640, w_p)
@@ -736,6 +740,7 @@ async def get_latest_frame():
 @app.get("/api/camera/telemetry")
 async def get_camera_telemetry():
     """Returns real-time telemetry and detections as JSON fallback if WebSockets are blocked."""
+    jpeg_bytes = None
     with pipeline_manager.lock:
         dets = list(pipeline_manager.latest_detections)
         behaviors = list(pipeline_manager.latest_behavior_events)
@@ -744,9 +749,11 @@ async def get_camera_telemetry():
         status = pipeline_manager.camera_status
         fps = pipeline_manager.fps
         inf_ms = pipeline_manager.inference_time_ms
-        b64_img = ""
-        if pipeline_manager.latest_jpeg is not None:
-            b64_img = f"data:image/jpeg;base64,{base64.b64encode(pipeline_manager.latest_jpeg).decode('utf-8')}"
+        jpeg_bytes = pipeline_manager.latest_jpeg
+
+    b64_img = ""
+    if jpeg_bytes is not None:
+        b64_img = f"data:image/jpeg;base64,{base64.b64encode(jpeg_bytes).decode('utf-8')}"
 
     return {
         "type": "detection",

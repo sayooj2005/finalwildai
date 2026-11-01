@@ -380,7 +380,7 @@ class WildlifeIoTSystem:
         raw = (raw_label or '').lower().strip()
 
         # 1. Human / Person
-        if raw in ['person', 'human', 'poacher']:
+        if raw in ['person', 'human', 'poacher', 'man', 'woman']:
             return 'person'
 
         # 2. Elephant (accurate direct COCO class)
@@ -481,7 +481,7 @@ class WildlifeIoTSystem:
         try:
             ctx = torch.inference_mode() if torch is not None else contextlib.nullcontext()
             with ctx:
-                results = self.model.predict(frame, verbose=False, imgsz=256, conf=0.20)
+                results = self.model.predict(frame, verbose=False, imgsz=320, conf=0.15)
         except Exception as e:
             print(f"[ERROR] Inference engine failure: {str(e)}")
             return frame, {"error": "Inference failure"}
@@ -531,7 +531,7 @@ class WildlifeIoTSystem:
                 track_id = int(box.id[0]) if (box.id is not None) else (box_idx + 1)
 
                 # Confidence threshold
-                min_threshold = 0.20 if detected_threat in ['tiger', 'wild_boar'] else 0.25
+                min_threshold = 0.15
                 if confidence < min_threshold:
                     continue
 

@@ -789,10 +789,9 @@ async function startDeviceCameraStream() {
                 return;
             }
 
-            // Real-time immediate rendering: If no fresh YOLO annotated frame has arrived from WebSocket within 1.0s,
-            // render the local webcam feed directly to streamImg so the user always sees a fluid live video!
+            // Real-time immediate rendering: ensure user always sees fluid local live video immediately
             const streamImg = document.getElementById('video-stream');
-            if (streamImg && (Date.now() - window._lastAiFrameTime > 3500)) {
+            if (streamImg && (!streamImg.src || streamImg.src === window.location.href || (Date.now() - window._lastAiFrameTime > 1200))) {
                 streamImg.src = browserHiddenCanvas.toDataURL('image/jpeg', 0.6);
             }
 
@@ -847,6 +846,89 @@ function stopDeviceCameraStream(stopViewer = true) {
     if (stopViewer) {
         stopDetectionStream();
     }
+}
+
+// ===================================
+// Real-Time Canvas HUD Detection Overlay
+// ===================================
+function drawDetectionOverlay(detections, status = "active", fps = 0) {
+    const canvas = document.getElementById('detection-overlay-canvas');
+    const streamImg = document.getElementById('video-stream');
+    if (!canvas || !streamImg) return;
+
+    const w = streamImg.clientWidth || 640;
+    const h = streamImg.clientHeight || 480;
+    if (w <= 0 || h <= 0) return;
+    if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+
+    if (!detections || detections.length === 0) {
+        return;
+    }
+
+    const scaleX = w / 640.0;
+    const scaleY = h / 480.0;
+
+    detections.forEach(det => {
+        let bbox = det.bbox || (det.bounding_box ? [det.bounding_box.x_min, det.bounding_box.y_min, det.bounding_box.x_max, det.bounding_box.y_max] : null);
+        if (!bbox || bbox.length < 4) return;
+
+        let [x1, y1, x2, y2] = bbox;
+        x1 = Math.round(x1 * scaleX);
+        y1 = Math.round(y1 * scaleY);
+        x2 = Math.round(x2 * scaleX);
+        y2 = Math.round(y2 * scaleY);
+        const bw = Math.max(24, x2 - x1);
+        const bh = Math.max(24, y2 - y1);
+
+        const isCritical = (det.danger_level === 'critical' || det.risk_score >= 80);
+        const isHigh = (det.danger_level === 'high' || det.risk_score >= 60);
+        const strokeColor = isCritical ? '#ef4444' : (isHigh ? '#f97316' : '#22c55e');
+
+        // Bounding Box
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(x1, y1, bw, bh);
+
+        // High-Tech Corner Reticles
+        const cLen = Math.min(18, Math.max(6, Math.floor(bw / 4)), Math.max(6, Math.floor(bh / 4)));
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1 + cLen); ctx.lineTo(x1, y1); ctx.lineTo(x1 + cLen, y1);
+        ctx.moveTo(x2 - cLen, y1); ctx.lineTo(x2, y1); ctx.lineTo(x2, y2 + cLen);
+        ctx.moveTo(x1, y2 - cLen); ctx.lineTo(x1, y2); ctx.lineTo(x1 + cLen, y2);
+        ctx.moveTo(x2 - cLen, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - cLen);
+        ctx.stroke();
+
+        // Label Pill
+        const rawName = (det.animal || det.species || det.class_name || 'TARGET');
+        const animalName = (rawName.toLowerCase() === 'person' ? 'HUMAN INTRUSION' : rawName).toUpperCase();
+        let confDisplay = "85%";
+        if (det.confidence !== undefined) {
+            const c = det.confidence;
+            confDisplay = typeof c === 'number' ? `${Math.round(c > 1.0 ? c : c * 100)}%` : String(c);
+        }
+        const behavior = (det.behavior || det.behaviour || 'Active').toUpperCase();
+        const labelText = `[*] ${animalName} (${confDisplay}) • ${behavior}`;
+
+        ctx.font = 'bold 12px Inter, system-ui, sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+        const pillY = Math.max(22, y1 - 24);
+
+        ctx.fillStyle = 'rgba(6, 11, 8, 0.88)';
+        ctx.fillRect(x1, pillY - 14, textWidth + 14, 22);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x1, pillY - 14, textWidth + 14, 22);
+
+        ctx.fillStyle = strokeColor;
+        ctx.fillText(labelText, x1 + 7, pillY + 2);
+    });
 }
 
 async function startLiveMonitoring(isBrowserCam = false) {
@@ -967,19 +1049,7 @@ async function startLiveMonitoring(isBrowserCam = false) {
     }
 
     try {
-        updateStatusBadge('status-cloud', 'Cloud:  Connecting...', false);
-        
-        // Connect to the central cloud inference websocket endpoint
-        const wsUrl = getBackendWsUrl();
-        
-        if (detectionWs) detectionWs.close();
-        
-        detectionWs = new WebSocket(wsUrl);
-        streamImg.alt = 'Connecting to Render Cloud API...';
-        
-        detectionWs.onopen = function() {
-            updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
-        };
+        updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
 
         function handleIncomingDetectionPayload(parsed) {
             if (!parsed) return;
@@ -1006,10 +1076,15 @@ async function startLiveMonitoring(isBrowserCam = false) {
             const camActive = parsed.camera_status === "connected";
             updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
 
+            // Draw HUD bounding box overlay directly on canvas
+            if (typeof drawDetectionOverlay === 'function') {
+                drawDetectionOverlay(parsed.detections || [], parsed.ai_status, parsed.fps);
+            }
+
             // Update Real-Time Behavioral Analysis Dashboard & Event Timeline
             updateBehavioralDashboard(parsed);
 
-            // Handle Detections Array - Trigger popups for ANY animal, person, or object detected
+            // Handle Detections Array - Trigger updates for ANY animal, person, or object detected
             if (parsed.detections && parsed.detections.length > 0) {
                 // Find primary threat (highest risk score)
                 const primaryThreat = parsed.detections.reduce((prev, current) => ((prev.risk_score || 0) > (current.risk_score || 0)) ? prev : current);
@@ -1037,22 +1112,19 @@ async function startLiveMonitoring(isBrowserCam = false) {
                     sector: currentSectorZone || "Cloud Zone"
                 };
                 
-                // 1. Continuous telemetry UI updates
+                // 1. Continuous telemetry UI updates (Risk meter, badges, vector)
                 updatePoseTelemetryUI(legacyFormat);
                 
-                // 2. Detection alert modal popup disabled per user requirement: no popup when detected
-                triggerDetectionAlertPopup(legacyFormat);
-                
-                // 3. Process detections and log critical alerts only
+                // 2. Process detections and log critical alerts only
                 const camId = parsed.camera_id || 'IP_WEBCAM_01';
                 parsed.detections.forEach(det => {
                     handleWildlifeDetectionAlert(det, camId, parsed.processed_frame, legacyFormat);
                 });
 
-                // 4. Update internal alert state without showing floating side popups
+                // 3. Update internal alert state without showing floating side popups
                 showOrUpdateAdminSideAlert(primaryThreat, camId, parsed.processed_frame, parsed.detections);
                 
-                // ── Part 16: Escape Route from Cloud ──
+                // 4. Escape Route from Cloud
                 if (parsed.escape_route) {
                     const r = parsed.escape_route;
                     const banner = document.getElementById('active-evacuation-card');
@@ -1066,53 +1138,78 @@ async function startLiveMonitoring(isBrowserCam = false) {
                         if (routeEl) routeEl.textContent = `Optimal Path: Proceed ${r.heading} along marked forestry trails. Avoid river border corridor.`;
                     }
                 }
+            } else {
+                // If feed is clear (no threat), set meter to safe level (5% Low Risk)
+                updatePoseTelemetryUI({
+                    action: "clear",
+                    species: "PERIMETER SECURE",
+                    confidence: "0%",
+                    danger_level: "low",
+                    risk_score: 5,
+                    behaviour: "Normal Scanning",
+                    pose: "No Target Detected",
+                    group_size: 0,
+                    zone: currentSectorZone || "Zone 1"
+                });
             }
         }
 
-        detectionWs.onmessage = function(event) {
-            if (typeof event.data === "string") {
-                try {
-                    const parsed = JSON.parse(event.data);
-                    handleIncomingDetectionPayload(parsed);
-                } catch(e) {
-                    console.error("Error processing cloud detection stream message:", e);
+        // Connect WebSocket if possible
+        try {
+            const wsUrl = getBackendWsUrl();
+            if (detectionWs) detectionWs.close();
+            detectionWs = new WebSocket(wsUrl);
+            detectionWs.onopen = function() {
+                updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
+            };
+            detectionWs.onmessage = function(event) {
+                if (typeof event.data === "string") {
+                    try {
+                        const parsed = JSON.parse(event.data);
+                        handleIncomingDetectionPayload(parsed);
+                    } catch(e) {}
                 }
-            }
-        };
+            };
+        } catch(wsErr) {}
 
+        // ALWAYS START REAL-TIME HTTP TELEMETRY POLLING (Solid fallback across all proxies & Vercel)
         let telemetryPollInterval = null;
         function startTelemetryFallback(base) {
-            if (telemetryPollInterval) return;
+            if (telemetryPollInterval) clearInterval(telemetryPollInterval);
             updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
-            telemetryPollInterval = setInterval(async () => {
+
+            const pollTelemetry = async () => {
                 const container = document.getElementById('liveStreamContainer');
                 if (!container || container.style.display === 'none') {
-                    clearInterval(telemetryPollInterval);
-                    telemetryPollInterval = null;
+                    if (telemetryPollInterval) {
+                        clearInterval(telemetryPollInterval);
+                        telemetryPollInterval = null;
+                    }
                     return;
                 }
                 try {
-                    const res = await fetch(`${base}/api/camera/telemetry`);
+                    const url = `${base}/api/camera/telemetry?t=${Date.now()}`;
+                    const res = await fetch(url, { cache: 'no-store' });
                     if (res.ok) {
                         const data = await res.json();
                         handleIncomingDetectionPayload(data);
                     }
-                } catch(err) {}
-            }, 500);
+                } catch(err) {
+                    try {
+                        const res2 = await fetch(`/api/camera/telemetry?t=${Date.now()}`, { cache: 'no-store' });
+                        if (res2.ok) {
+                            const data2 = await res2.json();
+                            handleIncomingDetectionPayload(data2);
+                        }
+                    } catch(e2) {}
+                }
+            };
+
+            pollTelemetry();
+            telemetryPollInterval = setInterval(pollTelemetry, 350);
         }
 
-        detectionWs.onerror = function(error) {
-            console.warn('WebSocket connection notice. Engaging HTTP cloud telemetry fallback.');
-            startTelemetryFallback(apiBase);
-        };
-        
-        detectionWs.onclose = function(event) {
-            if (event.code === 1000) {
-                // Clean intentional close
-                return;
-            }
-            startTelemetryFallback(apiBase);
-        };
+        startTelemetryFallback(apiBase);
 
     } catch (error) {
         console.error("Error starting cloud monitoring:", error);
@@ -3703,19 +3800,20 @@ async function testAlertSystem() {
 function updatePoseTelemetryUI(data) {
     if (!data) return;
 
-    const riskScore = data.risk_score || (data.danger_level === 'high' ? 85 : 55);
-    const poseState = data.pose || data.behavior || 'Standing Alert';
-    const groupSize = data.group_size || 1;
-    const species = data.species || 'Unknown';
-    const dangerLevel = (data.danger_level || 'medium').toUpperCase();
+    const riskScore = data.risk_score !== undefined ? data.risk_score : (data.danger_level === 'high' ? 85 : (data.danger_level === 'critical' ? 95 : 55));
+    const poseState = data.pose || data.behaviour || data.behavior || 'Standing Alert';
+    const groupSize = data.group_size !== undefined ? data.group_size : 1;
+    const rawSpecies = data.species || 'Unknown';
+    const species = rawSpecies.replace(/_/g, ' ').toUpperCase();
+    const dangerLevel = (data.danger_level || (riskScore >= 75 ? 'HIGH' : (riskScore >= 45 ? 'MEDIUM' : 'LOW'))).toUpperCase();
 
-    // Update risk meter bar & text
-    const riskBar = document.getElementById('telemetry-risk-bar');
+    // Update risk meter bar & text (supports both telemetry-risk-fill and telemetry-risk-bar IDs)
+    const riskBar = document.getElementById('telemetry-risk-fill') || document.getElementById('telemetry-risk-bar');
     const riskScoreEl = document.getElementById('telemetry-risk-score');
     const badgeEl = document.getElementById('telemetry-danger-badge');
 
     if (riskBar) {
-        riskBar.style.width = `${riskScore}%`;
+        riskBar.style.width = `${Math.min(100, Math.max(5, riskScore))}%`;
         if (riskScore >= 75) {
             riskBar.style.background = 'linear-gradient(90deg, #ff9800, #f44336)';
         } else if (riskScore >= 45) {
@@ -3725,10 +3823,13 @@ function updatePoseTelemetryUI(data) {
         }
     }
 
-    if (riskScoreEl) riskScoreEl.textContent = `${riskScore}%`;
+    if (riskScoreEl) riskScoreEl.textContent = `${riskScore}% Threat Likelihood`;
     if (badgeEl) {
         badgeEl.textContent = `${dangerLevel} RISK (${riskScore}%)`;
-        badgeEl.className = `badge badge-${dangerLevel === 'HIGH' || dangerLevel === 'CRITICAL' ? 'danger' : 'warning'}`;
+        const isDk = dangerLevel === 'HIGH' || dangerLevel === 'CRITICAL';
+        badgeEl.style.color = isDk ? '#dc2626' : (dangerLevel === 'MEDIUM' ? '#eab308' : '#22c55e');
+        badgeEl.style.borderColor = badgeEl.style.color;
+        badgeEl.style.background = isDk ? 'rgba(220,38,38,0.1)' : 'rgba(34,197,94,0.1)';
     }
 
     const speciesEl = document.getElementById('telemetry-species');
@@ -3736,10 +3837,14 @@ function updatePoseTelemetryUI(data) {
     const behaviorEl = document.getElementById('telemetry-behavior');
     const vectorEl = document.getElementById('telemetry-vector');
 
-    if (speciesEl) speciesEl.textContent = species;
-    if (groupEl) groupEl.textContent = `${groupSize} Animal${groupSize > 1 ? 's' : ''}`;
-    if (behaviorEl) behaviorEl.textContent = `${poseState} `;
-    if (vectorEl) vectorEl.textContent = `Vector: ${currentSectorZone.replace(/_/g, ' ')}`;
+    if (speciesEl) speciesEl.textContent = (species === 'PERSON' ? 'Human Intrusion / Poacher' : (species === 'PERIMETER SECURE' ? 'Perimeter Secure' : species));
+    if (groupEl) groupEl.textContent = groupSize > 0 ? `${groupSize} Target${groupSize > 1 ? 's' : ''} Detected` : '0 Targets In Frame';
+    if (behaviorEl) {
+        behaviorEl.textContent = `${poseState}`;
+        behaviorEl.style.color = (dangerLevel === 'HIGH' || dangerLevel === 'CRITICAL') ? '#dc2626' : '#133321';
+    }
+    const currentSector = (typeof currentSectorZone !== 'undefined' && currentSectorZone) ? currentSectorZone : 'Zone 1 - Forest Boundary';
+    if (vectorEl) vectorEl.textContent = `Sector: ${currentSector.replace(/_/g, ' ')}`;
 
     // Automatically update map & escape route whenever telemetry updates
     updateGeospatialEvacuationRoute(species, currentSectorZone, riskScore);

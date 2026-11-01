@@ -982,7 +982,10 @@
                             <span id="status-camera" class="status-pill"><span class="status-dot green"></span>Camera Link</span>
                         </div>
                     </div>
-                    <img id="video-stream" src="" alt="Live Stream Viewport">
+                    <div style="position: relative; width: 100%; min-height: 480px; background: #050a07; display: flex; align-items: center; justify-content: center;">
+                        <img id="video-stream" src="" alt="Live Stream Viewport" style="width: 100%; height: auto; min-height: 480px; max-height: 70vh; object-fit: contain; display: block;">
+                        <canvas id="detection-overlay-canvas" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10;"></canvas>
+                    </div>
                 </div>
 
                 <!-- Telemetry Card Below Video -->
