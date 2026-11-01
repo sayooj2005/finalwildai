@@ -1291,6 +1291,16 @@ function simulateDetection() {
     triggerDetectionAlertPopup(legacyFormat);
     handleWildlifeDetectionAlert(mockData, 'CAM_SIM_01', mockData.image, legacyFormat);
     showOrUpdateAdminSideAlert(mockData, 'CAM_SIM_01', mockData.image, [mockData]);
+    if (typeof drawDetectionOverlay === 'function') {
+        drawDetectionOverlay([{
+            animal: "Person",
+            bbox: [160, 60, 480, 420],
+            confidence: 0.98,
+            danger_level: "high",
+            risk_score: 94,
+            behavior: "Walking / Approaching Sector Boundary"
+        }]);
+    }
 }
 
 function addLiveDetectionToFeed(data) {
