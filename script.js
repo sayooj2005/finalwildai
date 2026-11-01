@@ -721,27 +721,37 @@ async function startDeviceCameraStream() {
                 video: {
                     width: { ideal: 640 },
                     height: { ideal: 480 },
-                    facingMode: { ideal: "environment" }
+                    facingMode: { ideal: "user" }
                 },
                 audio: false
             });
         } catch (camErr) {
             console.warn("Retrying getUserMedia with standard video constraints...", camErr);
             browserMediaStream = await navigator.mediaDevices.getUserMedia({
-                video: { width: { ideal: 640 }, height: { ideal: 480 } },
+                video: true,
                 audio: false
             });
         }
 
         if (!browserHiddenVideo) {
             browserHiddenVideo = document.createElement('video');
-            browserHiddenVideo.setAttribute('playsinline', '');
-            browserHiddenVideo.setAttribute('muted', '');
-            browserHiddenVideo.style.display = 'none';
+            browserHiddenVideo.playsInline = true;
+            browserHiddenVideo.muted = true;
+            browserHiddenVideo.autoplay = true;
+            // Never use display: none because Chromium halts video decoding on hidden elements!
+            browserHiddenVideo.style.cssText = 'position: fixed; top: -9999px; left: -9999px; width: 640px; height: 480px; opacity: 0; pointer-events: none; z-index: -9999;';
             document.body.appendChild(browserHiddenVideo);
         }
         browserHiddenVideo.srcObject = browserMediaStream;
-        await browserHiddenVideo.play();
+
+        // Ensure video has metadata & dimensions ready
+        await new Promise((resolve) => {
+            if (browserHiddenVideo.videoWidth > 0) return resolve();
+            browserHiddenVideo.onloadeddata = () => resolve();
+            browserHiddenVideo.onloadedmetadata = () => resolve();
+            setTimeout(resolve, 800);
+        });
+        try { await browserHiddenVideo.play(); } catch(e) {}
 
         if (!browserHiddenCanvas) {
             browserHiddenCanvas = document.createElement('canvas');
@@ -753,29 +763,47 @@ async function startDeviceCameraStream() {
 
         // Inform the backend pipeline to prepare for pushed frames
         try {
-            await fetch(`${apiBase}/api/settings/camera`, {
+            const setCamUrl = window.location.protocol === 'https:' ? '/api/settings/camera' : `${apiBase}/api/settings/camera`;
+            fetch(setCamUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: "PUSH_INGEST" })
-            });
-        } catch(e) {
-            console.warn("Camera settings notify notice:", e);
-        }
+            }).catch(() => {});
+        } catch(e) {}
 
         // Set input indicator
         const ipInput = document.getElementById('ipWebcamInput');
         if (ipInput) ipInput.value = 'Browser Device Camera';
 
-        // Stream frames at ~15 FPS to the cloud backend
+        // Stream frames at ~8 FPS to the cloud backend (every 120ms)
         let pushing = false;
+        window._lastAiFrameTime = Date.now();
+
         browserStreamInterval = setInterval(() => {
-            if (!browserMediaStream || pushing || !browserHiddenVideo.videoWidth) return;
+            if (!browserMediaStream) return;
+
+            // Draw current webcam frame onto hidden canvas
+            try {
+                ctx.drawImage(browserHiddenVideo, 0, 0, 640, 480);
+            } catch(drawErr) {
+                return;
+            }
+
+            // Real-time immediate rendering: If no fresh YOLO annotated frame has arrived from WebSocket within 1.0s,
+            // render the local webcam feed directly to streamImg so the user always sees a fluid live video!
+            const streamImg = document.getElementById('video-stream');
+            if (streamImg && (Date.now() - window._lastAiFrameTime > 900)) {
+                streamImg.src = browserHiddenCanvas.toDataURL('image/jpeg', 0.6);
+            }
+
+            if (pushing) return;
             pushing = true;
-            ctx.drawImage(browserHiddenVideo, 0, 0, 640, 480);
+
             browserHiddenCanvas.toBlob(async (blob) => {
                 if (blob) {
                     try {
-                        await fetch(`${apiBase}/api/camera/push_frame`, {
+                        const pushUrl = window.location.protocol === 'https:' ? '/api/camera/push_frame' : `${apiBase}/api/camera/push_frame`;
+                        await fetch(pushUrl, {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'image/jpeg',
@@ -789,9 +817,9 @@ async function startDeviceCameraStream() {
                 }
                 pushing = false;
             }, 'image/jpeg', 0.65);
-        }, 66); // ~15 FPS
+        }, 120);
 
-        showNotification('📷 Device camera active! Streaming live frames to Cloud AI Engine...', 'success');
+        showNotification('Device camera active! Streaming live frames to Cloud AI Engine...', 'success');
 
         // Launch surveillance viewer & telemetry
         await startLiveMonitoring(true);
@@ -897,9 +925,13 @@ async function startLiveMonitoring(isBrowserCam = false) {
     if (streamContainer) streamContainer.style.display = 'block';
     
     // Connect native high-speed MJPEG stream directly for fluid, continuous playback
-    const mjpegUrl = `${apiBase}/video_feed?t=${Date.now()}`;
-    streamImg.src = mjpegUrl;
-    streamImg.alt = 'Live Surveillance Stream Active';
+    if (!isBrowserCam && targetUrl !== "PUSH_INGEST") {
+        const mjpegUrl = `${apiBase}/video_feed?t=${Date.now()}`;
+        streamImg.src = mjpegUrl;
+        streamImg.alt = 'Live Surveillance Stream Active';
+    } else {
+        streamImg.alt = 'Live Browser Camera Feed Active';
+    }
     
     let mjpegReconnectTimer = null;
     streamImg.onerror = () => {
@@ -961,6 +993,7 @@ async function startLiveMonitoring(isBrowserCam = false) {
                     }
                     
                     if (parsed.type === "detection") {
+                        window._lastAiFrameTime = Date.now();
                         // Render real-time YOLO annotated frame directly onto streamImg viewport
                         if (parsed.processed_frame && streamImg) {
                             streamImg.src = parsed.processed_frame;

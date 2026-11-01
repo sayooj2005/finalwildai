@@ -200,6 +200,8 @@ class LiveStreamPipeline:
             self.raw_frame_time = time.time()
             self.raw_source = source
             self.camera_status = "connected"
+            if self.camera_source in [0, "0", "None"]:
+                self.camera_source = "PUSH_INGEST" 
 
     def get_latest_raw(self):
         with self.lock:
@@ -289,6 +291,11 @@ class LiveStreamPipeline:
 
         retry_delay = 1.0
         while self.cap_worker_running:
+            if str(self.camera_source) == "PUSH_INGEST":
+                with self.lock:
+                    self.camera_status = "connected"
+                time.sleep(0.5)
+                continue
             try:
                 with self.lock:
                     self.camera_status = "connecting"
