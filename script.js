@@ -792,7 +792,7 @@ async function startDeviceCameraStream() {
             // Real-time immediate rendering: If no fresh YOLO annotated frame has arrived from WebSocket within 1.0s,
             // render the local webcam feed directly to streamImg so the user always sees a fluid live video!
             const streamImg = document.getElementById('video-stream');
-            if (streamImg && (Date.now() - window._lastAiFrameTime > 900)) {
+            if (streamImg && (Date.now() - window._lastAiFrameTime > 3500)) {
                 streamImg.src = browserHiddenCanvas.toDataURL('image/jpeg', 0.6);
             }
 
@@ -981,108 +981,105 @@ async function startLiveMonitoring(isBrowserCam = false) {
             updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
         };
 
+        function handleIncomingDetectionPayload(parsed) {
+            if (!parsed) return;
+            const streamImg = document.getElementById('video-stream');
+
+            if (parsed.type === "camera_status") {
+                const camActive = parsed.status === "connected";
+                updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
+                return;
+            }
+
+            window._lastAiFrameTime = Date.now();
+
+            // Render real-time YOLO annotated frame directly onto streamImg viewport
+            if (parsed.processed_frame && parsed.processed_frame.length > 50 && streamImg) {
+                streamImg.src = parsed.processed_frame;
+            }
+
+            // Update status badges
+            updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
+            const aiActive = parsed.ai_status === "processing" || (parsed.detections && parsed.detections.length > 0);
+            updateStatusBadge('status-ai', aiActive ? 'AI YOLO:  Processing' : 'AI YOLO:  Active', true);
+            
+            const camActive = parsed.camera_status === "connected";
+            updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
+
+            // Update Real-Time Behavioral Analysis Dashboard & Event Timeline
+            updateBehavioralDashboard(parsed);
+
+            // Handle Detections Array - Trigger popups for ANY animal, person, or object detected
+            if (parsed.detections && parsed.detections.length > 0) {
+                // Find primary threat (highest risk score)
+                const primaryThreat = parsed.detections.reduce((prev, current) => ((prev.risk_score || 0) > (current.risk_score || 0)) ? prev : current);
+                
+                const spName = primaryThreat.animal || primaryThreat.species || primaryThreat.class_name || "Target";
+                let confDisplay = "92%";
+                if (primaryThreat.confidence !== undefined) {
+                    const c = primaryThreat.confidence;
+                    confDisplay = typeof c === 'number' ? (c > 1.0 ? c : c * 100).toFixed(0) + "%" : String(c);
+                }
+
+                // Map new cloud format to existing UI format
+                const legacyFormat = {
+                    action: "alert",
+                    species: spName,
+                    confidence: confDisplay,
+                    image: parsed.processed_frame,
+                    danger_level: primaryThreat.danger_level || 'high',
+                    risk_score: primaryThreat.risk_score || 85,
+                    behaviour: primaryThreat.behaviour || primaryThreat.behavior || 'Active movement',
+                    pose: primaryThreat.pose_pattern || 'Standard',
+                    group_size: parsed.detections.length,
+                    zone: primaryThreat.zone || 'Zone-A',
+                    track_id: primaryThreat.track_id,
+                    sector: currentSectorZone || "Cloud Zone"
+                };
+                
+                // 1. Continuous telemetry UI updates
+                updatePoseTelemetryUI(legacyFormat);
+                
+                // 2. Detection alert modal popup disabled per user requirement: no popup when detected
+                triggerDetectionAlertPopup(legacyFormat);
+                
+                // 3. Process detections and log critical alerts only
+                const camId = parsed.camera_id || 'IP_WEBCAM_01';
+                parsed.detections.forEach(det => {
+                    handleWildlifeDetectionAlert(det, camId, parsed.processed_frame, legacyFormat);
+                });
+
+                // 4. Update internal alert state without showing floating side popups
+                showOrUpdateAdminSideAlert(primaryThreat, camId, parsed.processed_frame, parsed.detections);
+                
+                // ── Part 16: Escape Route from Cloud ──
+                if (parsed.escape_route) {
+                    const r = parsed.escape_route;
+                    const banner = document.getElementById('active-evacuation-card');
+                    if (banner) {
+                        banner.style.display = 'block';
+                        const titleEl = document.getElementById('evac-safe-zone-title');
+                        const metaEl = document.getElementById('evac-safe-zone-meta');
+                        const routeEl = document.getElementById('evac-recommended-route');
+                        if (titleEl) titleEl.textContent = `EVACUATE TOWARDS: ${r.safe_zone_name.toUpperCase()}`;
+                        if (metaEl) metaEl.textContent = `${r.distance_meters}m Away • Heading ${r.heading} • Emergency Contact: ${r.contact || 'Forest Station Ward 4'}`;
+                        if (routeEl) routeEl.textContent = `Optimal Path: Proceed ${r.heading} along marked forestry trails. Avoid river border corridor.`;
+                    }
+                }
+            }
+        }
+
         detectionWs.onmessage = function(event) {
             if (typeof event.data === "string") {
                 try {
                     const parsed = JSON.parse(event.data);
-                    
-                    if (parsed.type === "camera_status") {
-                        const camActive = parsed.status === "connected";
-                        updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
-                        return;
-                    }
-                    
-                    if (parsed.type === "detection") {
-                        window._lastAiFrameTime = Date.now();
-                        // Render real-time YOLO annotated frame directly onto streamImg viewport
-                        if (parsed.processed_frame && streamImg) {
-                            streamImg.src = parsed.processed_frame;
-                        }
-
-                        // Update status badges
-                        updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
-                        const aiActive = parsed.ai_status === "processing";
-                        updateStatusBadge('status-ai', aiActive ? 'AI YOLO:  Processing' : 'AI YOLO:  Idle', aiActive);
-                        
-                        const camActive = parsed.camera_status === "connected";
-                        updateStatusBadge('status-camera', camActive ? 'Camera:  Live Stream' : 'Camera:  Connecting...', camActive);
-
-                        // Update Real-Time Behavioral Analysis Dashboard & Event Timeline
-                        updateBehavioralDashboard(parsed);
-
-                        // Handle Detections Array - Trigger popups for ANY animal, person, or object detected
-                        if (parsed.detections && parsed.detections.length > 0) {
-                            // Find primary threat (highest risk score)
-                            const primaryThreat = parsed.detections.reduce((prev, current) => ((prev.risk_score || 0) > (current.risk_score || 0)) ? prev : current);
-                            
-                            const spName = primaryThreat.animal || primaryThreat.species || primaryThreat.class_name || "Target";
-                            let confDisplay = "92%";
-                            if (primaryThreat.confidence !== undefined) {
-                                const c = primaryThreat.confidence;
-                                confDisplay = typeof c === 'number' ? (c > 1.0 ? c : c * 100).toFixed(0) + "%" : String(c);
-                            }
-
-                            // Map new cloud format to existing UI format
-                            const legacyFormat = {
-                                action: "alert",
-                                species: spName,
-                                confidence: confDisplay,
-                                image: parsed.processed_frame,
-                                danger_level: primaryThreat.danger_level || 'high',
-                                risk_score: primaryThreat.risk_score || 85,
-                                behaviour: primaryThreat.behaviour || primaryThreat.behavior || 'Active movement',
-                                pose: primaryThreat.pose_pattern || 'Standard',
-                                group_size: parsed.detections.length,
-                                zone: primaryThreat.zone || 'Zone-A',
-                                track_id: primaryThreat.track_id,
-                                sector: currentSectorZone || "Cloud Zone"
-                            };
-                            
-                            // 1. Continuous telemetry UI updates
-                            updatePoseTelemetryUI(legacyFormat);
-                            
-                            // 2. Detection alert modal popup disabled per user requirement: no popup when detected
-                            triggerDetectionAlertPopup(legacyFormat);
-                            
-                            // 3. Process detections and log critical alerts only
-                            const camId = parsed.camera_id || 'IP_WEBCAM_01';
-                            parsed.detections.forEach(det => {
-                                handleWildlifeDetectionAlert(det, camId, parsed.processed_frame, legacyFormat);
-                            });
-
-                            // 4. Update internal alert state without showing floating side popups
-                            showOrUpdateAdminSideAlert(primaryThreat, camId, parsed.processed_frame, parsed.detections);
-                            
-                            // ── Part 16: Escape Route from Cloud ──
-                            if (parsed.escape_route) {
-                                const r = parsed.escape_route;
-                                const banner = document.getElementById('active-evacuation-card');
-                                if (banner) {
-                                    banner.style.display = 'block';
-                                    banner.innerHTML = `
-                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                                            <strong style="color:#00e676;"> CLOUD ESCAPE ROUTE ENGAGED</strong>
-                                            <span class="badge" style="background:#f44336;">HEADING: ${r.heading}</span>
-                                        </div>
-                                        <p style="margin:4px 0;font-size:0.9rem;">
-                                              <strong>${primaryThreat.animal.toUpperCase()}</strong> detected in <em>${primaryThreat.zone || 'Zone-A'}</em> — 
-                                            Behaviour: <strong>${primaryThreat.behaviour || 'MOVING'}</strong>
-                                        </p>
-                                        <p style="margin:4px 0;font-size:0.9rem;">
-                                             Move <strong>${r.heading}</strong> → 
-                                            <strong>${r.safe_zone_name}</strong> (~${r.distance_meters}m)
-                                        </p>
-                                        <p style="margin:4px 0;font-size:0.85rem;opacity:0.7;"> ${r.contact} &nbsp;|&nbsp;  ${r.note}</p>
-                                    `;
-                                }
-                                updateGeospatialEvacuationRoute(primaryThreat.animal, currentSectorZone, primaryThreat.risk_score || 85);
-                            }
-                        }
-                    }
-                } catch(e) { console.error("Error parsing Cloud WS text", e); }
+                    handleIncomingDetectionPayload(parsed);
+                } catch(e) {
+                    console.error("Error processing cloud detection stream message:", e);
+                }
             }
         };
-        
+
         let telemetryPollInterval = null;
         function startTelemetryFallback(base) {
             if (telemetryPollInterval) return;
@@ -1098,12 +1095,7 @@ async function startLiveMonitoring(isBrowserCam = false) {
                     const res = await fetch(`${base}/api/camera/telemetry`);
                     if (res.ok) {
                         const data = await res.json();
-                        updateStatusBadge('status-cloud', 'Cloud:  Connected', true);
-                        if (data.camera_status === 'connected') {
-                            updateStatusBadge('status-camera', 'Camera:  Live Stream', true);
-                            updateStatusBadge('status-ai', 'AI YOLO:  Processing', true);
-                        }
-                        updateBehavioralDashboard(data);
+                        handleIncomingDetectionPayload(data);
                     }
                 } catch(err) {}
             }, 500);

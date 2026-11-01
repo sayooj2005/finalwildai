@@ -1,3 +1,9 @@
+import torch
+try:
+    if hasattr(torch, 'set_num_threads'):
+        torch.set_num_threads(1)
+except Exception:
+    pass
 import os
 import time
 import json
@@ -738,6 +744,9 @@ async def get_camera_telemetry():
         status = pipeline_manager.camera_status
         fps = pipeline_manager.fps
         inf_ms = pipeline_manager.inference_time_ms
+        b64_img = ""
+        if pipeline_manager.latest_jpeg is not None:
+            b64_img = f"data:image/jpeg;base64,{base64.b64encode(pipeline_manager.latest_jpeg).decode('utf-8')}"
 
     return {
         "type": "detection",
@@ -748,7 +757,8 @@ async def get_camera_telemetry():
         "detections": dets,
         "behavior_events": behaviors,
         "active_behaviors": active_b,
-        "escape_route": escape
+        "escape_route": escape,
+        "processed_frame": b64_img
     }
 
 @app.get("/api/camera/status")

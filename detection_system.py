@@ -175,6 +175,12 @@ class WildlifeIoTSystem:
             self.device = 'cpu'
             
         print(f"[SYSTEM] Hardware Accelerator detected: {self.device.upper()}")
+        try:
+            import torch
+            if hasattr(torch, 'set_num_threads'):
+                torch.set_num_threads(1)
+        except Exception:
+            pass
         
         # Load YOLO Model
         self.model = None
@@ -471,12 +477,11 @@ class WildlifeIoTSystem:
         imgsz = int(os.getenv("INFERENCE_SIZE", "320"))
         iou = float(os.getenv("IOU_THRESHOLD", "0.7"))
 
-        # Run YOLO with ByteTrack enabled for persistent object tracking
+        # Lightweight YOLO inference optimized for cloud container RAM (under 512MB)
         try:
             ctx = torch.inference_mode() if torch is not None else contextlib.nullcontext()
             with ctx:
-                results_gen = self.model.track(frame, persist=True, tracker="bytetrack.yaml", stream=True, verbose=False, imgsz=imgsz, iou=iou)
-                results = list(results_gen)
+                results = self.model.predict(frame, verbose=False, imgsz=256, conf=0.20)
         except Exception as e:
             print(f"[ERROR] Inference engine failure: {str(e)}")
             return frame, {"error": "Inference failure"}
