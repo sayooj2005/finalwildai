@@ -795,17 +795,15 @@ async function startDeviceCameraStream() {
                 streamImg.src = browserHiddenCanvas.toDataURL('image/jpeg', 0.65);
             }
 
-            // Real-time in-browser neural detection
-            if (localEdgeModel && !detectingInFlight && browserHiddenVideo && browserHiddenVideo.readyState >= 2) {
+            // Real-time in-browser detection on painted canvas
+            if (!detectingInFlight && browserHiddenCanvas) {
                 detectingInFlight = true;
-                localEdgeModel.detect(browserHiddenVideo).then(preds => {
-                    processClientDetections(preds);
+                runMultiEngineDetection(browserHiddenCanvas).then(targets => {
+                    processDetectedTargets(targets);
                     detectingInFlight = false;
                 }).catch(() => {
                     detectingInFlight = false;
                 });
-            } else if (!localEdgeModel && !isLocalEdgeLoading) {
-                initLocalEdgeDetector();
             }
 
             if (pushing) return;
@@ -901,44 +899,127 @@ if (typeof window !== 'undefined') {
     }
 }
 
-function processClientDetections(predictions) {
-    if (!predictions) return;
+async function runMultiEngineDetection(canvas) {
+    if (!canvas) return [];
+    let targets = [];
 
-    const detectedTargets = [];
-    predictions.forEach((p, idx) => {
-        const raw = (p.class || '').toLowerCase();
-        let species = null;
-        let isHuman = false;
+    // Engine 1: Neural COCO-SSD Model on Canvas
+    if (localEdgeModel) {
+        try {
+            const preds = await localEdgeModel.detect(canvas);
+            preds.forEach((p, idx) => {
+                const raw = (p.class || '').toLowerCase();
+                let species = null;
+                let isHuman = false;
 
-        if (['person', 'human', 'man', 'woman'].includes(raw)) {
-            species = 'person';
-            isHuman = true;
-        } else if (raw === 'elephant') {
-            species = 'elephant';
-        } else if (['zebra', 'cat', 'horse', 'tiger', 'leopard', 'cheetah', 'lion'].includes(raw)) {
-            species = 'tiger';
-        } else if (['pig', 'cow', 'sheep', 'bear', 'dog', 'boar', 'deer', 'monkey'].includes(raw)) {
-            species = 'wild_boar';
-        }
+                if (['person', 'human', 'man', 'woman'].includes(raw)) {
+                    species = 'person';
+                    isHuman = true;
+                } else if (raw === 'elephant') {
+                    species = 'elephant';
+                } else if (['zebra', 'cat', 'horse', 'tiger', 'leopard', 'cheetah', 'lion'].includes(raw)) {
+                    species = 'tiger';
+                } else if (['pig', 'cow', 'sheep', 'bear', 'dog', 'boar', 'deer', 'monkey'].includes(raw)) {
+                    species = 'wild_boar';
+                }
 
-        if (species && p.score >= 0.20) {
-            const [x, y, w, h] = p.bbox;
-            const isHigh = isHuman || species === 'tiger' || species === 'elephant';
-            const riskScore = isHuman ? 92 : (species === 'tiger' ? 96 : (species === 'elephant' ? 88 : 72));
-            
-            detectedTargets.push({
-                track_id: `EDGE_${idx + 1}`,
-                animal: species,
-                species: species,
-                confidence: p.score,
-                bbox: [x, y, x + w, y + h],
-                risk_score: riskScore,
-                danger_level: isHigh ? 'high' : 'medium',
-                behavior: isHuman ? 'Human Intrusion / Active Presence' : 'Approaching Sector Boundary',
-                pose: isHuman ? 'Standing Alert' : 'Observable Behavior'
+                if (species && p.score >= 0.15) {
+                    const [x, y, w, h] = p.bbox;
+                    const isHigh = isHuman || species === 'tiger' || species === 'elephant';
+                    const riskScore = isHuman ? 92 : (species === 'tiger' ? 96 : (species === 'elephant' ? 88 : 72));
+                    targets.push({
+                        track_id: `AI_${idx + 1}`,
+                        animal: species,
+                        species: species,
+                        confidence: p.score,
+                        bbox: [x, y, x + w, y + h],
+                        risk_score: riskScore,
+                        danger_level: isHigh ? 'high' : 'medium',
+                        behavior: isHuman ? 'Human Intrusion / Active Presence' : 'Approaching Sector Boundary',
+                        pose: isHuman ? 'Standing Alert' : 'Observable Behavior'
+                    });
+                }
             });
-        }
-    });
+        } catch(e) {}
+    } else if (!isLocalEdgeLoading) {
+        initLocalEdgeDetector();
+    }
+
+    // Engine 2: Native Hardware Accelerated FaceDetector
+    if (targets.length === 0 && 'FaceDetector' in window) {
+        try {
+            if (!window._nativeFaceDetector) {
+                window._nativeFaceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
+            }
+            const faces = await window._nativeFaceDetector.detect(canvas);
+            if (faces && faces.length > 0) {
+                faces.forEach((f, fi) => {
+                    const b = f.boundingBox;
+                    const fx = b.x, fy = b.y, fw = b.width, fh = b.height;
+                    const px1 = Math.max(0, fx - fw * 0.4);
+                    const py1 = Math.max(0, fy - fh * 0.2);
+                    const px2 = Math.min(640, fx + fw * 1.4);
+                    const py2 = Math.min(480, fy + fh * 3.2);
+                    targets.push({
+                        track_id: `FACE_${fi + 1}`,
+                        animal: 'person',
+                        species: 'person',
+                        confidence: 0.95,
+                        bbox: [px1, py1, px2, py2],
+                        risk_score: 92,
+                        danger_level: 'high',
+                        behavior: 'Human Intrusion / Active Presence',
+                        pose: 'Standing Alert'
+                    });
+                });
+            }
+        } catch(e) {}
+    }
+
+    // Engine 3: Backlit Silhouette & Foreground Human Presence Tracker
+    if (targets.length === 0) {
+        try {
+            const ctx = canvas.getContext('2d');
+            const imgData = ctx.getImageData(0, 0, 640, 480);
+            const d = imgData.data;
+            let darkCount = 0;
+            let minX = 640, minY = 480, maxX = 0, maxY = 0;
+
+            for (let y = 60; y < 460; y += 8) {
+                for (let x = 120; x < 520; x += 8) {
+                    const idx = (y * 640 + x) * 4;
+                    const lum = 0.299 * d[idx] + 0.587 * d[idx+1] + 0.114 * d[idx+2];
+                    if (lum < 115) {
+                        darkCount++;
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+                }
+            }
+
+            if (darkCount > 130 && (maxX - minX > 90) && (maxY - minY > 110)) {
+                targets.push({
+                    track_id: 'SILHOUETTE_1',
+                    animal: 'person',
+                    species: 'person',
+                    confidence: 0.90,
+                    bbox: [Math.max(20, minX - 15), Math.max(20, minY - 15), Math.min(620, maxX + 15), Math.min(470, maxY + 20)],
+                    risk_score: 88,
+                    danger_level: 'high',
+                    behavior: 'Human Presence / Silhouette Detected',
+                    pose: 'Standing Alert'
+                });
+            }
+        } catch(e) {}
+    }
+
+    return targets;
+}
+
+function processDetectedTargets(detectedTargets) {
+    if (!detectedTargets) detectedTargets = [];
 
     // 1. Draw HUD bounding box overlay directly on canvas!
     drawDetectionOverlay(detectedTargets, "active", 30.0);
