@@ -5,15 +5,15 @@
     "rewrites": [
         {
             "source": "/api/:path*",
-            "destination": "https://finalwildai-backend.onrender.com/api/:path*"
+            "destination": "https://wildai-backend-7sov.onrender.com/api/:path*"
         },
         {
             "source": "/uploads/:path*",
-            "destination": "https://finalwildai-backend.onrender.com/uploads/:path*"
+            "destination": "https://wildai-backend-7sov.onrender.com/uploads/:path*"
         },
         {
             "source": "/video_feed",
-            "destination": "https://finalwildai-backend.onrender.com/video_feed"
+            "destination": "https://wildai-backend-7sov.onrender.com/video_feed"
         },
         {
             "source": "/sos",

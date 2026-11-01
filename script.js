@@ -1,9 +1,12 @@
 // ===================================
 // Cloud Backend & API Resolution
 // ===================================
+const ACTIVE_RENDER_URL = 'https://wildai-backend-7sov.onrender.com';
+
 if (window.location.protocol !== 'file:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-    if (!localStorage.getItem('wildai_backend_url') || localStorage.getItem('wildai_backend_url').includes('vercel.app')) {
-        localStorage.setItem('wildai_backend_url', 'https://finalwildai-backend.onrender.com');
+    const current = localStorage.getItem('wildai_backend_url');
+    if (!current || current.includes('vercel.app') || current.includes('finalwildai-backend') || current.includes('localhost')) {
+        localStorage.setItem('wildai_backend_url', ACTIVE_RENDER_URL);
     }
 }
 
@@ -13,10 +16,10 @@ function getBackendUrl() {
         return 'http://localhost:8083';
     }
     const saved = localStorage.getItem('wildai_backend_url');
-    if (saved && saved.trim() && !saved.includes('vercel.app')) {
+    if (saved && saved.trim() && !saved.includes('vercel.app') && !saved.includes('finalwildai-backend')) {
         return saved.trim().replace(/\/$/, '');
     }
-    return 'https://finalwildai-backend.onrender.com';
+    return ACTIVE_RENDER_URL;
 }
 
 function getBackendWsUrl() {
@@ -712,15 +715,23 @@ async function startDeviceCameraStream() {
         stopDeviceCameraStream(false);
         showNotification('Requesting device camera access...', 'info');
 
-        // Request front or rear environment camera
-        browserMediaStream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: { ideal: "environment" }
-            },
-            audio: false
-        });
+        // Request camera with fallback for laptop/desktop webcams
+        try {
+            browserMediaStream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: { ideal: "environment" }
+                },
+                audio: false
+            });
+        } catch (camErr) {
+            console.warn("Retrying getUserMedia with standard video constraints...", camErr);
+            browserMediaStream = await navigator.mediaDevices.getUserMedia({
+                video: { width: { ideal: 640 }, height: { ideal: 480 } },
+                audio: false
+            });
+        }
 
         if (!browserHiddenVideo) {
             browserHiddenVideo = document.createElement('video');
@@ -824,6 +835,8 @@ async function startLiveMonitoring(isBrowserCam = false) {
         );
     }
 
+    const isCloud = window.location.protocol === 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
     let targetUrl = "0";
     if (isBrowserCam || camUrl === 'Browser Device Camera') {
         targetUrl = "PUSH_INGEST";
@@ -839,7 +852,12 @@ async function startLiveMonitoring(isBrowserCam = false) {
         targetUrl = cleanUrl;
         localStorage.setItem('last_ipcam_url', camUrl);
     } else {
-        targetUrl = "0";
+        targetUrl = isCloud ? "PUSH_INGEST" : "0";
+    }
+
+    if (targetUrl === "PUSH_INGEST" && !isBrowserCam && !browserMediaStream) {
+        await startDeviceCameraStream();
+        return;
     }
 
     const apiBase = getBackendUrl();
