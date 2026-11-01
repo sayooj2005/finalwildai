@@ -201,23 +201,21 @@ class LiveStreamPipeline:
         if w > 960:
             scale = 960.0 / w
             frame = cv2.resize(frame, (960, int(h * scale)), interpolation=cv2.INTER_AREA)
-        with self.lock:
-            self.raw_frame = frame
-            self.raw_frame_time = time.time()
-            self.raw_source = source
-            self.camera_status = "connected"
-            if self.camera_source in [0, "0", "None"]:
-                self.camera_source = "PUSH_INGEST" 
+        self.raw_frame = frame
+        self.raw_frame_time = time.time()
+        self.raw_source = source
+        self.camera_status = "connected"
+        if self.camera_source in [0, "0", "None"]:
+            self.camera_source = "PUSH_INGEST" 
 
     def get_latest_raw(self):
-        with self.lock:
-            now = time.time()
-            if self.raw_frame is not None and (now - self.raw_frame_time < 3.0):
-                return self.raw_frame, self.raw_frame_time, self.raw_source
-            
-            # Active standby frame generator keeps the stream continuously fluid
-            standby = self._generate_standby_frame()
-            return standby, now, "STANDBY_RADAR"
+        now = time.time()
+        rf = self.raw_frame
+        rft = self.raw_frame_time
+        if rf is not None and (now - rft < 3.0):
+            return rf, rft, self.raw_source
+        standby = self._generate_standby_frame()
+        return standby, now, "STANDBY_RADAR"
 
     def _generate_standby_frame(self):
         canvas = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -245,29 +243,27 @@ class LiveStreamPipeline:
         return canvas
 
     def update_processed(self, processed_frame: np.ndarray, jpeg_bytes: bytes, detections: list, behavior_events: list, escape_route: dict, active_behaviors: list, fps: float, inf_time: float):
-        with self.lock:
-            self.processed_frame = processed_frame
-            self.latest_jpeg = jpeg_bytes
-            self.latest_detections = detections
-            self.latest_behavior_events = behavior_events
-            self.latest_escape_route = escape_route
-            self.active_behaviors = active_behaviors
-            self.fps = fps
-            self.inference_time_ms = inf_time
-            self.total_processed_frames += 1
+        self.processed_frame = processed_frame
+        self.latest_jpeg = jpeg_bytes
+        self.latest_detections = detections
+        self.latest_behavior_events = behavior_events
+        self.latest_escape_route = escape_route
+        self.active_behaviors = active_behaviors
+        self.fps = fps
+        self.inference_time_ms = inf_time
+        self.total_processed_frames += 1
         with self.mjpeg_cond:
             self.mjpeg_cond.notify_all()
 
     def get_status(self):
-        with self.lock:
-            return {
-                "camera_status": self.camera_status,
-                "camera_source": str(self.camera_source),
-                "fps": round(self.fps, 1),
-                "inference_time_ms": round(self.inference_time_ms, 1),
-                "total_frames": self.total_processed_frames,
-                "active_detections": len(self.latest_detections)
-            }
+        return {
+            "camera_status": self.camera_status,
+            "camera_source": str(self.camera_source),
+            "fps": round(self.fps, 1),
+            "inference_time_ms": round(self.inference_time_ms, 1),
+            "total_frames": self.total_processed_frames,
+            "active_detections": len(self.latest_detections)
+        }
 
     def start_camera(self, src):
         """Starts camera capture worker in a dedicated daemon thread with auto-reconnection."""
@@ -317,6 +313,13 @@ class LiveStreamPipeline:
                         if not cap.isOpened():
                             cap = cv2.VideoCapture(idx, cv2.CAP_MSMF)
                     else:
+                        if not os.path.exists('/dev/video0') and not os.path.exists(f'/dev/video{idx}'):
+                            print(f"[PIPELINE] Cloud environment without /dev/video{idx}. Switching to PUSH_INGEST.")
+                            self.camera_source = "PUSH_INGEST"
+                            self.camera_status = "connected"
+                            while self.cap_worker_running:
+                                time.sleep(0.5)
+                            return
                         cap = cv2.VideoCapture(idx)
                     
                     if cap.isOpened():
@@ -398,7 +401,7 @@ class LiveStreamPipeline:
 # Global pipeline instance
 pipeline_manager = LiveStreamPipeline()
 connected_dashboard_clients = []
-cloud_iot_detector = None
+cloud_iot_detector = WildlifeIoTSystem(model_path=MODEL_PATH, capture_index=None)
 
 global_diagnostics = {
     "total_processed_frames": 0,
@@ -490,8 +493,8 @@ def background_db_persistence(detections, behavior_events, escape_route, snapsho
 @app.on_event("startup")
 async def startup_event():
     global cloud_iot_detector, pipeline_manager
-    # Initialize YOLO once for the cloud pipeline
-    cloud_iot_detector = WildlifeIoTSystem(model_path=MODEL_PATH, capture_index=None)
+    if cloud_iot_detector is None:
+        cloud_iot_detector = WildlifeIoTSystem(model_path=MODEL_PATH, capture_index=None)
     
     # Auto-connect camera if configured
     initial_cam = os.getenv("CAMERA_SOURCE", None)

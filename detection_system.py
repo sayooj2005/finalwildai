@@ -279,7 +279,7 @@ class WildlifeIoTSystem:
             base_score = 85
         elif "elephant" in species_lower:
             base_score = 80
-        elif "poacher" in species_lower or "human" in species_lower:
+        elif any(s in species_lower for s in ["poacher", "human", "person"]):
             base_score = 90
         elif "bear" in species_lower:
             base_score = 70
