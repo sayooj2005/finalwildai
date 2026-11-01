@@ -791,8 +791,21 @@ async function startDeviceCameraStream() {
 
             // Real-time immediate rendering: ensure user always sees fluid local live video immediately
             const streamImg = document.getElementById('video-stream');
-            if (streamImg && (!streamImg.src || streamImg.src === window.location.href || (Date.now() - window._lastAiFrameTime > 1200))) {
-                streamImg.src = browserHiddenCanvas.toDataURL('image/jpeg', 0.6);
+            if (streamImg) {
+                streamImg.src = browserHiddenCanvas.toDataURL('image/jpeg', 0.65);
+            }
+
+            // Real-time in-browser neural detection
+            if (localEdgeModel && !detectingInFlight && browserHiddenVideo && browserHiddenVideo.readyState >= 2) {
+                detectingInFlight = true;
+                localEdgeModel.detect(browserHiddenVideo).then(preds => {
+                    processClientDetections(preds);
+                    detectingInFlight = false;
+                }).catch(() => {
+                    detectingInFlight = false;
+                });
+            } else if (!localEdgeModel && !isLocalEdgeLoading) {
+                initLocalEdgeDetector();
             }
 
             if (pushing) return;
@@ -845,6 +858,130 @@ function stopDeviceCameraStream(stopViewer = true) {
     }
     if (stopViewer) {
         stopDetectionStream();
+    }
+}
+
+// ===================================
+// In-Browser Edge AI Neural Detection Engine
+// ===================================
+let localEdgeModel = null;
+let isLocalEdgeLoading = false;
+let detectingInFlight = false;
+
+async function initLocalEdgeDetector() {
+    if (localEdgeModel || isLocalEdgeLoading) return;
+    if (typeof cocoSsd === 'undefined') {
+        console.warn("[EDGE AI] Waiting for cocoSsd neural library to load...");
+        setTimeout(initLocalEdgeDetector, 500);
+        return;
+    }
+    try {
+        isLocalEdgeLoading = true;
+        console.log("[EDGE AI] Initializing in-browser neural detection engine...");
+        localEdgeModel = await cocoSsd.load({ base: 'mobilenet_v2' });
+        console.log("[EDGE AI] Neural detection engine active and ready!");
+        const aiBadge = document.getElementById('status-ai');
+        if (aiBadge) {
+            aiBadge.innerHTML = 'AI YOLO:  Active';
+            aiBadge.style.background = '#4caf50';
+        }
+    } catch(err) {
+        console.warn("[EDGE AI] In-browser detector notice:", err);
+    } finally {
+        isLocalEdgeLoading = false;
+    }
+}
+
+// Auto-initialize Edge AI on page load
+if (typeof window !== 'undefined') {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        setTimeout(initLocalEdgeDetector, 300);
+    } else {
+        window.addEventListener('DOMContentLoaded', () => setTimeout(initLocalEdgeDetector, 300));
+    }
+}
+
+function processClientDetections(predictions) {
+    if (!predictions) return;
+
+    const detectedTargets = [];
+    predictions.forEach((p, idx) => {
+        const raw = (p.class || '').toLowerCase();
+        let species = null;
+        let isHuman = false;
+
+        if (['person', 'human', 'man', 'woman'].includes(raw)) {
+            species = 'person';
+            isHuman = true;
+        } else if (raw === 'elephant') {
+            species = 'elephant';
+        } else if (['zebra', 'cat', 'horse', 'tiger', 'leopard', 'cheetah', 'lion'].includes(raw)) {
+            species = 'tiger';
+        } else if (['pig', 'cow', 'sheep', 'bear', 'dog', 'boar', 'deer', 'monkey'].includes(raw)) {
+            species = 'wild_boar';
+        }
+
+        if (species && p.score >= 0.20) {
+            const [x, y, w, h] = p.bbox;
+            const isHigh = isHuman || species === 'tiger' || species === 'elephant';
+            const riskScore = isHuman ? 92 : (species === 'tiger' ? 96 : (species === 'elephant' ? 88 : 72));
+            
+            detectedTargets.push({
+                track_id: `EDGE_${idx + 1}`,
+                animal: species,
+                species: species,
+                confidence: p.score,
+                bbox: [x, y, x + w, y + h],
+                risk_score: riskScore,
+                danger_level: isHigh ? 'high' : 'medium',
+                behavior: isHuman ? 'Human Intrusion / Active Presence' : 'Approaching Sector Boundary',
+                pose: isHuman ? 'Standing Alert' : 'Observable Behavior'
+            });
+        }
+    });
+
+    // 1. Draw HUD bounding box overlay directly on canvas!
+    drawDetectionOverlay(detectedTargets, "active", 30.0);
+
+    // 2. Update telemetry dashboard metrics & risk meter
+    const statusAi = document.getElementById('status-ai');
+    const statusCam = document.getElementById('status-camera');
+
+    if (detectedTargets.length > 0) {
+        const primary = detectedTargets.reduce((prev, curr) => (prev.risk_score > curr.risk_score) ? prev : curr);
+        const legacyFormat = {
+            action: "alert",
+            species: primary.species,
+            confidence: `${Math.round(primary.confidence * 100)}%`,
+            danger_level: primary.danger_level,
+            risk_score: primary.risk_score,
+            behaviour: primary.behavior,
+            pose: primary.pose,
+            group_size: detectedTargets.length,
+            zone: "Zone-A (Foreground)",
+            sector: (typeof currentSectorZone !== 'undefined' && currentSectorZone) ? currentSectorZone : "Zone 1 - Forest Boundary"
+        };
+        updatePoseTelemetryUI(legacyFormat);
+        if (statusAi) { statusAi.innerHTML = 'AI YOLO:  Processing'; statusAi.style.background = '#4caf50'; }
+        if (statusCam) { statusCam.innerHTML = 'Camera:  Live Stream'; statusCam.style.background = '#4caf50'; }
+
+        if (typeof handleWildlifeDetectionAlert === 'function') {
+            handleWildlifeDetectionAlert(primary, 'BROWSER_DEVICE_CAM', '', legacyFormat);
+        }
+    } else {
+        updatePoseTelemetryUI({
+            action: "clear",
+            species: "PERIMETER SECURE",
+            confidence: "0%",
+            danger_level: "low",
+            risk_score: 5,
+            behaviour: "Normal Scanning",
+            pose: "No Target Detected",
+            group_size: 0,
+            zone: (typeof currentSectorZone !== 'undefined' && currentSectorZone) ? currentSectorZone : "Zone 1 - Forest Boundary"
+        });
+        if (statusAi) { statusAi.innerHTML = 'AI YOLO:  Active'; statusAi.style.background = '#4caf50'; }
+        if (statusCam) { statusCam.innerHTML = 'Camera:  Live Stream'; statusCam.style.background = '#4caf50'; }
     }
 }
 
